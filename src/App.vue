@@ -1,26 +1,29 @@
 <template>
-  <img alt="Vue logo" src="./assets/logo.png">
-  <HelloWorld msg="Welcome to Your Vue.js App"/>
+  <n-config-provider :theme="theme">
+    <n-notification-provider>
+      <n-message-provider>
+        <fileexplorer />
+      </n-message-provider>
+    </n-notification-provider>
+  </n-config-provider>
 </template>
 
-<script>
-import HelloWorld from './components/HelloWorld.vue'
+<script setup>
+import { fileExplorer } from "./components";
+import { darkTheme } from "naive-ui";
 
-export default {
-  name: 'App',
-  components: {
-    HelloWorld
-  }
-}
+const theme = darkTheme;
+const fileexplorer = fileExplorer;
 </script>
 
 <style>
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-align: center;
   color: #2c3e50;
-  margin-top: 60px;
+  margin: 20px;
+}
+body {
+  background-color: rgb(24, 24, 28);
 }
 </style>

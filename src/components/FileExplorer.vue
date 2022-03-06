@@ -1,0 +1,502 @@
+
+<template>
+  <n-card title="Infinitime File Explorer">
+    <n-button type="success" v-if="!isConnected" @click="connectDevice">
+      Connect to Infinitime
+    </n-button>
+
+    <div v-if="isConnected">
+      <n-card
+        title="Device connected"
+        :bordered="false"
+        size="small"
+        class="rounded-16px shadow-sm device"
+      >
+        <n-descriptions
+          label-placement="left"
+          bordered
+          size="small"
+          :column="1"
+        >
+          <n-descriptions-item label="Name">
+            <n-tag type="primary">{{ deviceName }}</n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="FW Version">
+            <n-tag type="primary">{{ deviceVersion }}</n-tag>
+          </n-descriptions-item>
+          <n-descriptions-item label="BLE FS Version">
+            <n-tag type="primary">{{ fileServiceVersion }}</n-tag>
+          </n-descriptions-item>
+
+          <n-descriptions-item>
+            <n-button type="error" @click="disconnectDevice">
+              Disconnect
+            </n-button>
+          </n-descriptions-item>
+        </n-descriptions>
+      </n-card>
+
+      <n-card
+        v-if="fileServiceReady"
+        title="File Explorer"
+        :bordered="true"
+        size="small"
+        class="rounded-16px shadow-sm"
+      >
+        <n-space>
+          <n-upload>
+            <n-button round type="primary">Upload File</n-button>
+          </n-upload>
+          <n-button round type="info" @click="showModal = true">
+            Make dir
+          </n-button>
+          <n-button round type="warning" @click="loadDir('/')">
+            /
+          </n-button>
+        </n-space>
+        <n-space vertical>
+          {{ path }}
+        </n-space>
+        <n-data-table
+          :columns="columns"
+          :data="dataSource"
+          :pagination="false"
+        />
+      </n-card>
+    </div>
+  </n-card>
+
+  <n-modal
+    v-model:show="showModal"
+    :mask-closable="false"
+    preset="dialog"
+    title="Make directory"
+    content="Are you sure?"
+    positive-text="Confirm"
+    negative-text="Cancel"
+    @positive-click="onDirCreate"
+  >
+    <div :style="{ maxHeight: '60vh', height: '10vh' }">
+      <n-scrollbar class="pl-5 pr-5">
+        <div>
+          <n-input
+            v-model:value="dirName"
+            type="text"
+            placeholder="Directory Name"
+          />
+        </div>
+      </n-scrollbar>
+    </div>
+  </n-modal>
+</template>
+
+<style>
+.n-card .device {
+  max-width: 400px;
+}
+</style>
+
+<script setup>
+import { ref, h } from "vue";
+import { useMessage, NButton } from "naive-ui";
+import { useRenderAction } from "@/components/utils";
+
+let bleDevice = null;
+let fileTransfer = ref(null);
+let isConnected = ref(false);
+let fileServiceReady = ref(false);
+const message = useMessage();
+
+let deviceName = ref("");
+let deviceVersion = ref("");
+let fileServiceVersion = ref(0);
+
+let dirName = ref("");
+
+let showModal = ref(false);
+
+let path = ref("/");
+
+const createColumns = () => {
+  return [
+    {
+      title: "File",
+      key: "file",
+      render(row) {
+        return row.flags == 0
+          ? h(
+              NButton,
+              {
+                size: "small",
+
+                onClick: () => {
+                  //path.value = row.file;
+                  //loadDir(path.value);
+                },
+              },
+              { default: () => row.file }
+            )
+          : h(
+              NButton,
+              {
+                size: "small",
+
+                onClick: () => {
+                  let navPath = row.file;
+                  if (navPath == "..") {
+                    navPath = path.value.split("/").slice(0, -1).join("/");
+                  } else {
+                    if (path.value == "/") {
+                      navPath = "/" + navPath;
+                    } else {
+                      navPath = path.value + "/" + navPath;
+                    }
+                  }
+                  loadDir(navPath);                  
+                },
+              },
+              { default: () => row.file }
+            );
+      },
+    },
+    {
+      title: "Size",
+      key: "size",
+      render(row) {
+        return row.flags == 0 ? `${row.size} bytes` : null;
+      },
+    },
+    {
+      title: "",
+      key: "actions",
+      render(row) {
+        return row.file != ".."
+          ? useRenderAction([
+              {
+                label: "Delete",
+                onClick: () => {
+                  deleteFile(path.value + row.file);
+                },
+              },
+            ])
+          : null;
+      },
+    },
+  ];
+};
+
+let columns = createColumns({
+  play(row) {
+    message.info(`${row.file}`);
+  },
+});
+
+let dataSource = ref([]);
+
+const connectDevice = () => {
+  try {
+    requestBlE();
+  } catch (error) {
+    message.error("Request BLE : " + error, {
+      closable: true,
+      duration: 10000,
+    });
+  }
+};
+
+const onDisconnected = () => {
+  message.success("Device is disconnected.");
+  isConnected.value = false;
+};
+
+// request connection to a Pinetime device
+const requestBlE = () => {
+  let options = {
+    filters: [
+      {
+        name: "InfiniTime",
+      },
+    ],
+    optionalServices: [0xfebb, 0x180a],
+  };
+  if (navigator.bluetooth == undefined) {
+    message.error("Sorry, Your device does not support Web BLE!", {
+      closable: true,
+      duration: 10000,
+    });
+    return;
+  }
+
+  navigator.bluetooth
+    .requestDevice(options)
+    .then((device) => {
+      bleDevice = device;
+      bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
+      return bleDevice.gatt.connect();
+    })
+    .then(async (server) => {
+      if (server) {
+        getDeviceCharacteristic();
+        getDeviceFileCharacteristic();
+        isConnected.value = true;
+      }
+    })
+    .catch((error) => {
+      message.error("BLE Connection : " + error, {
+        closable: true,
+        duration: 10000,
+      });
+      isConnected.value = false;
+    });
+};
+
+const getDeviceCharacteristic = () => {
+  bleDevice.gatt
+    .getPrimaryService(0x180a)
+    .then(async (service) => {
+      const characteristic1 = await service.getCharacteristic(0x2a28);
+      const value1 = await characteristic1.readValue();
+      deviceName.value = decode(value1);
+
+      const characteristic2 = await service.getCharacteristic(0x2a26);
+      const value2 = await characteristic2.readValue();
+      deviceVersion.value = decode(value2);
+    })
+    .catch((error) => {
+      message.error("getDeviceCharacteristic: " + error, {
+        closable: true,
+        duration: 10000,
+      });
+    });
+};
+
+const getDeviceFileCharacteristic = () => {
+  bleDevice.gatt
+    .getPrimaryService(0xfebb)
+    .then(async (service) => {
+      fileServiceReady.value = false;
+      const characteristic1 = await service.getCharacteristic(
+        "adaf0100-4669-6c65-5472-616e73666572"
+      );
+      const value1 = await characteristic1.readValue();
+      fileServiceVersion.value =
+        padHex(value1.getUint8(0)) + padHex(value1.getUint8(1));
+
+      await service
+        .getCharacteristic("adaf0200-4669-6c65-5472-616e73666572")
+        .then((characteristic) => {
+          fileTransfer.value = characteristic;
+          fileServiceReady.value = true;
+
+          characteristic.startNotifications().then((_) => {
+            if (_) null;
+            characteristic.addEventListener(
+              "characteristicvaluechanged",
+              handleFileNotifications
+            );
+          });
+
+          loadDir(path.value);
+        });
+    })
+    .catch((error) => {
+      message.error("getDeviceFileCharacteristic: " + error, {
+        closable: true,
+        duration: 10000,
+      });
+    });
+};
+
+let dirList = {};
+
+const handleFileNotifications = (event) => {
+  let value = event.target.value;
+  let offset = 0;
+  //console.log('handleFileNotifications');
+  if (value.getUint8(offset) == 0x51) {
+    //console.log(value);
+    dirList = {};
+    offset++;
+    dirList.status = value.getUint8(offset);
+    offset++;
+    dirList.path_length = value.getUint16(offset, true);
+    offset += 2;
+    dirList.entry = value.getUint32(offset, true);
+    offset += 4;
+    dirList.totalentries = value.getUint32(offset, true);
+    offset += 4;
+    dirList.flags = value.getUint32(offset, true);
+    offset += 4;
+    dirList.modification_time = value.getBigUint64(offset, true);
+    offset += 8;
+    dirList.file_size = value.getUint32(offset, true);
+    offset += 4;
+    dirList.path = decode(value.buffer.slice(offset));
+    //console.log(offset);
+
+    if (dirList.path_length != 0 && dirList.path != ".") {
+      // && dirList.path != ".."
+      dataSource.value.push({
+        key: dirList.entry,
+        file: dirList.path,
+        size: dirList.file_size,
+        flags: dirList.flags,
+      });
+    }
+
+    //console.log(dirList);
+  } else if (value.getUint8(offset) == 0x41) {
+    offset++;
+    let status = value.getUint8(offset);
+    if (status == 0x01) {
+      message.success("Directory created.");
+    } else {
+      message.error("Error creating directory. [" + status + "]");
+    }
+    loadDir(path.value);
+  } else if (value.getUint8(offset) == 0x31) {
+    offset++;
+    let status = value.getUint8(offset);
+    if (status == 0x01) {
+      message.success("File deleted.");
+    } else {
+      message.error("Error deleting file. [" + status + "]");
+    }
+    loadDir(path.value);
+  } else {
+    message.success("File Notification : " + value.getUint8(offset), {
+      closable: true,
+      duration: 10000,
+    });
+  }
+};
+
+const loadDir = (dirPath) => {
+
+  path.value = dirPath;
+  let header = new Uint8Array(4);
+  let size = toBytesInt16(dirPath.length);
+
+  /*
+    Command (single byte): 0x50
+    1 byte of padding
+    Unsigned 16-bit integer encoding the length of the file path.
+    File path: UTF-8 encoded string that is not null terminated.
+
+  */
+  header[0] = 0x50;
+  header[1] = 0x00;
+  header[2] = size[1];
+  header[3] = size[0];
+
+  let value = new Uint8Array([...header, ...new TextEncoder().encode(dirPath)]);
+
+  //console.log(value);
+
+  fileTransfer.value.writeValueWithoutResponse(value).then(function () {
+    dataSource.value = [];
+  });
+};
+
+const makeDir = (path) => {
+  let header = new Uint8Array(16);
+  let size = toBytesInt16(path.length);
+
+  /*
+    Command (single byte): 0x40
+    1 byte of padding
+    Unsigned 16-bit integer encoding the length of the file path.
+    4 bytes of padding
+    Unsigned 64-bit integer encoding the unix timestamp with nanosecond resolution.
+    File path: UTF-8 encoded string that is not null terminated.
+
+  */
+  header[0] = 0x40;
+  header[1] = 0x00;
+  header[2] = size[1];
+  header[3] = size[0];
+  header[4] = 0x00;
+  header[5] = 0x00;
+  header[6] = 0x00;
+  header[7] = 0x00;
+
+  header[8] = 0x00;
+  header[9] = 0x00;
+  header[10] = 0x00;
+  header[11] = 0x00;
+  header[12] = 0x00;
+  header[13] = 0x00;
+  header[14] = 0x00;
+  header[15] = 0x00;
+
+  let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
+
+  //console.log(value);
+
+  fileTransfer.value.writeValueWithoutResponse(value).then(function () {
+    dataSource.value = [];
+  });
+};
+
+const deleteFile = (path) => {
+  let header = new Uint8Array(4);
+  let size = toBytesInt16(path.length);
+
+  /*
+    Command (single byte): 0x30
+    1 byte of padding
+    Unsigned 16-bit integer encoding the length of the file path.
+    File path: UTF-8 encoded string that is not null terminated.
+
+  */
+  header[0] = 0x30;
+  header[1] = 0x00;
+  header[2] = size[1];
+  header[3] = size[0];
+
+  let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
+
+  //console.log(value);
+
+  fileTransfer.value.writeValueWithoutResponse(value).then(function () {
+    dataSource.value = [];
+  });
+};
+
+const disconnectDevice = () => {
+  isConnected.value = false;
+  fileServiceReady.value = false;
+  if (!bleDevice) {
+    return;
+  }
+  if (bleDevice.gatt.connected) {
+    bleDevice.gatt.disconnect();
+  } else {
+    message.success("Bluetooth Device is already disconnected");
+  }
+};
+
+const onDirCreate = () => {
+  //message.success("mkDir");
+  if (!path.value.endsWith("/")) {
+    dirName.value = "/" + dirName.value;
+  }
+  makeDir(path.value + dirName.value);
+  dirName.value = "";
+};
+
+const decode = (buf) => {
+  let dec = new TextDecoder("utf-8");
+  return dec.decode(buf);
+};
+
+const padHex = (value) => {
+  return ("00" + value.toString(16).toUpperCase()).slice(-2);
+};
+
+const toBytesInt16 = (num) => {
+  let arr = new Uint8Array([(num & 0xff00) >> 8, num & 0x00ff]);
+  return arr;
+};
+</script>
+
