@@ -5,6 +5,12 @@
       Connect to Infinitime
     </n-button>
 
+    <div v-if="isConnected && !fileServiceReady">
+      <n-space>
+        <n-spin size="large" />
+      </n-space>
+    </div>
+    
     <div v-if="isConnected">
       <n-card
         title="Device connected"
@@ -50,12 +56,12 @@
           <n-button round type="info" @click="showModal = true">
             Make dir
           </n-button>
-          <n-button round type="warning" @click="loadDir('/')">
-            /
+          <n-button round type="warning" @click="loadDir(path)">
+            <template #icon>
+              <n-icon size="14" :component="Redo" />
+            </template>
+            {{ path }}
           </n-button>
-        </n-space>
-        <n-space vertical>
-          {{ path }}
         </n-space>
         <n-data-table
           :columns="columns"
@@ -76,7 +82,7 @@
     negative-text="Cancel"
     @positive-click="onDirCreate"
   >
-    <div :style="{ maxHeight: '60vh', height: '10vh' }">
+    <div :style="{ maxHeight: '60vh', height: '5vh' }">
       <n-scrollbar class="pl-5 pr-5">
         <div>
           <n-input
@@ -100,6 +106,7 @@
 import { ref, h } from "vue";
 import { useMessage, NButton } from "naive-ui";
 import { useRenderAction } from "@/components/utils";
+import { Redo } from "@vicons/fa";
 
 let bleDevice = null;
 let fileTransfer = ref(null);
@@ -152,7 +159,7 @@ const createColumns = () => {
                       navPath = path.value + "/" + navPath;
                     }
                   }
-                  loadDir(navPath);                  
+                  loadDir(navPath);
                 },
               },
               { default: () => row.file }
@@ -175,7 +182,13 @@ const createColumns = () => {
               {
                 label: "Delete",
                 onClick: () => {
-                  deleteFile(path.value + row.file);
+                  let navPath = row.file;
+                  if (path.value == "/") {
+                    navPath = "/" + navPath;
+                  } else {
+                    navPath = path.value + "/" + navPath;
+                  }
+                  deleteFile(navPath);
                 },
               },
             ])
@@ -372,7 +385,9 @@ const handleFileNotifications = (event) => {
 };
 
 const loadDir = (dirPath) => {
-
+  if (dirPath == "") {
+    dirPath = "/";
+  }
   path.value = dirPath;
   let header = new Uint8Array(4);
   let size = toBytesInt16(dirPath.length);
@@ -478,6 +493,10 @@ const disconnectDevice = () => {
 
 const onDirCreate = () => {
   //message.success("mkDir");
+  if (path.value == "") {
+    message.error("Please select a directory to create.");
+    return;
+  }
   if (!path.value.endsWith("/")) {
     dirName.value = "/" + dirName.value;
   }
