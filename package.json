@@ -11,7 +11,9 @@
     "core-js": "^3.8.3",
     "vue": "^3.2.13",
     "vue-class-component": "^8.0.0-0",
-    "vue-webble": "^0.1.0"
+    "vue-webble": "^0.1.0",
+    "vuex": "^4.0.2",
+    "web-bluetooth-vuex": "^0.1.16"
   },
   "devDependencies": {
     "@babel/core": "^7.12.16",
