@@ -5,70 +5,120 @@
       Connect to Infinitime
     </n-button>
 
-    <div v-if="isConnected && !fileServiceReady">
-      <n-space>
-        <n-spin size="large" />
-      </n-space>
-    </div>
-    
     <div v-if="isConnected">
-      <n-card
-        title="Device connected"
-        :bordered="false"
-        size="small"
-        class="rounded-16px shadow-sm device"
-      >
-        <n-descriptions
-          label-placement="left"
-          bordered
+      <n-space vertical size="large">
+        <n-card
+          title="Device information"
+          :bordered="true"
           size="small"
-          :column="1"
+          class="rounded-16px shadow-sm device"
         >
-          <n-descriptions-item label="Name">
-            <n-tag type="primary">{{ deviceName }}</n-tag>
-          </n-descriptions-item>
-          <n-descriptions-item label="FW Version">
-            <n-tag type="primary">{{ deviceVersion }}</n-tag>
-          </n-descriptions-item>
-          <n-descriptions-item label="BLE FS Version">
-            <n-tag type="primary">{{ fileServiceVersion }}</n-tag>
-          </n-descriptions-item>
+          <n-descriptions
+            label-placement="left"
+            bordered
+            size="small"
+            :column="1"
+          >
+            <n-descriptions-item label="Name">
+              <n-tag type="primary">{{ deviceName }}</n-tag>
+            </n-descriptions-item>
+            <n-descriptions-item label="FW Version">
+              <n-tag type="primary">{{ deviceVersion }}</n-tag>
+            </n-descriptions-item>
+            <n-descriptions-item label="BLE FS Version">
+              <n-tag type="primary">{{ fileServiceVersion }}</n-tag>
+            </n-descriptions-item>
 
-          <n-descriptions-item>
-            <n-button type="error" @click="disconnectDevice">
-              Disconnect
-            </n-button>
-          </n-descriptions-item>
-        </n-descriptions>
-      </n-card>
+            <n-descriptions-item>
+              <n-button type="error" @click="disconnectDevice">
+                Disconnect
+              </n-button>
+            </n-descriptions-item>
+          </n-descriptions>
+        </n-card>
 
-      <n-card
-        v-if="fileServiceReady"
-        title="File Explorer"
-        :bordered="true"
-        size="small"
-        class="rounded-16px shadow-sm"
-      >
-        <n-space>
-          <n-upload>
-            <n-button round type="primary">Upload File</n-button>
-          </n-upload>
-          <n-button round type="info" @click="showModal = true">
-            Make dir
-          </n-button>
-          <n-button round type="warning" @click="loadDir(path)">
-            <template #icon>
-              <n-icon size="14" :component="Redo" />
-            </template>
-            {{ path }}
-          </n-button>
-        </n-space>
-        <n-data-table
-          :columns="columns"
-          :data="dataSource"
-          :pagination="false"
-        />
-      </n-card>
+        <n-card
+          v-if="fileServiceReady"
+          title="File Explorer"
+          :bordered="true"
+          size="small"
+          class="rounded-16px shadow-sm"
+        >
+          <n-grid x-gap="12" :cols="2">
+            <n-gi>
+              <n-space vertical>
+                <n-space>
+                  <n-button round type="warning" @click="loadDir('/')">
+                    /
+                  </n-button>
+                  <n-button round type="warning" @click="loadDir(path)">
+                    <template #icon>
+                      <n-icon size="14" :component="Redo" />
+                    </template>
+                    {{ path }}
+                  </n-button>
+                  <n-button round type="info" @click="showModal = true">
+                    Make dir
+                  </n-button>
+                </n-space>
+                <n-data-table
+                  :columns="columns"
+                  :data="dataSource"
+                  :pagination="false"
+                />
+              </n-space>
+            </n-gi>
+            <n-gi>
+              <n-space vertical>
+                <n-progress
+                  type="line"
+                  status="error"
+                  :percentage="uploadingPercentage"
+                  :height="24"                  
+                  border-radius="12px 0 12px 0"
+                  fill-border-radius="12px 0 12px 0"
+                >
+                  {{ uploadingFile }}
+                </n-progress>
+
+                <n-upload
+                  ref="uploadRef"
+                  :default-upload="false"
+                  multiple
+                  @change="handleUploadChange"
+                  accept=".bin,.res,.wf"
+                >
+                  <n-upload-dragger>
+                    <div style="margin-bottom: 12px">
+                      <n-icon size="48" :depth="3">
+                        <FileUpload />
+                      </n-icon>
+                    </div>
+                    <n-text style="font-size: 16px">
+                      Click or drag a file to this area to upload
+                    </n-text>
+                    <n-p depth="3" style="margin: 8px 0 0 0">
+                      {{ path }}
+                    </n-p>
+                  </n-upload-dragger>
+                </n-upload>
+                <n-button
+                  :disabled="!fileListLength"
+                  style="margin-bottom: 12px"
+                  @click="handleUpload"
+                >
+                  Upload Files
+                </n-button>
+              </n-space>
+            </n-gi>
+          </n-grid>
+        </n-card>
+        <div v-if="!fileServiceReady">
+          <n-space justify="center">
+            <n-spin size="large" />
+          </n-space>
+        </div>
+      </n-space>
     </div>
   </n-card>
 
@@ -106,23 +156,124 @@
 import { ref, h } from "vue";
 import { useMessage, NButton } from "naive-ui";
 import { useRenderAction } from "@/components/utils";
-import { Redo } from "@vicons/fa";
+import { Redo, FileUpload } from "@vicons/fa";
 
-let bleDevice = null;
-let fileTransfer = ref(null);
-let isConnected = ref(false);
-let fileServiceReady = ref(false);
+const bleDevice = ref(null);
+const fileTransfer = ref(null);
+
+const isConnected = ref(false);
+const fileServiceReady = ref(false);
 const message = useMessage();
 
-let deviceName = ref("");
-let deviceVersion = ref("");
-let fileServiceVersion = ref(0);
+const deviceName = ref("");
+const deviceVersion = ref("");
+const fileServiceVersion = ref(0);
 
-let dirName = ref("");
+const dirName = ref("");
 
-let showModal = ref(false);
+const showModal = ref(false);
 
-let path = ref("/");
+const path = ref("/");
+
+const fileListLength = ref(0);
+const uploadRef = ref(null);
+const fileReadyTransfer = ref([]);
+
+const uploadingPercentage = ref(0);
+const uploadingFile = ref("");
+
+const handleUploadChange = (data) => {
+  fileListLength.value = data.fileList.length;
+  fileReadyTransfer.value = data.fileList;
+};
+
+const handleUpload = () => {
+  fileUpload(0).then(() => {
+    fileListLength.value = 0;
+    uploadRef.value.clear();
+    fileReadyTransfer.value = [];
+    dataSource.value = [];
+    loadDir(path.value);
+    uploadingFile.value = "";
+    uploadingPercentage.value = 0;
+  });
+};
+
+const fileUpload = (filePos) => {
+  return new Promise((resolve /*, reject*/) => {
+    fileSend(fileReadyTransfer.value[filePos].file).then(() => {
+      filePos++;
+      if (filePos < fileReadyTransfer.value.length) {
+        fileUpload(filePos).then(() => {
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  });
+};
+
+const fileSend = (file) => {
+  return new Promise((resolve /*, reject*/) => {
+    // create file
+    createFile(path.value + "/" + file.name, file.size).then(() => {
+      uploadingFile.value = file.name;
+
+      // send file data
+      console.log("file created : " + file.name);
+
+      let reader = new FileReader();
+      reader.onload = (f) => {
+        if (f.target.result.byteLength > 0) {
+          let fileSource = new Uint8Array(f.target.result);
+          console.log("local file read");
+          console.log("file size : " + fileSource.byteLength);
+          fileSendData(fileSource, 0)
+            .then(() => {
+              console.log("file send");
+              resolve();
+            })
+            .catch((error) => {
+              console.log("fileSend fileSendData : " + error);
+            });
+        }
+      };
+      reader.onerror = function () {
+        reader.abort();
+        console.log("Failed to read file : " + reader.error);
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+  });
+};
+
+const fileSendData = (fileData, firmwareProgress) => {
+  return new Promise((resolve /*, reject*/) => {
+    let packetLength = 200;
+
+    let element = fileData.slice(
+      firmwareProgress,
+      firmwareProgress + packetLength
+    );
+
+    dataFile(element, element.byteLength, firmwareProgress).then(() => {
+      firmwareProgress += element.byteLength;
+      uploadingPercentage.value =
+        (firmwareProgress / fileData.byteLength) * 100;
+
+      console.log(firmwareProgress);
+      if (firmwareProgress < fileData.byteLength) {
+        fileSendData(fileData, firmwareProgress).then(() => {
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  });
+};
 
 const createColumns = () => {
   return [
@@ -243,9 +394,12 @@ const requestBlE = () => {
   navigator.bluetooth
     .requestDevice(options)
     .then((device) => {
-      bleDevice = device;
-      bleDevice.addEventListener("gattserverdisconnected", onDisconnected);
-      return bleDevice.gatt.connect();
+      bleDevice.value = device;
+      bleDevice.value.addEventListener(
+        "gattserverdisconnected",
+        onDisconnected
+      );
+      return bleDevice.value.gatt.connect();
     })
     .then(async (server) => {
       if (server) {
@@ -264,7 +418,7 @@ const requestBlE = () => {
 };
 
 const getDeviceCharacteristic = () => {
-  bleDevice.gatt
+  bleDevice.value.gatt
     .getPrimaryService(0x180a)
     .then(async (service) => {
       const characteristic1 = await service.getCharacteristic(0x2a28);
@@ -284,7 +438,7 @@ const getDeviceCharacteristic = () => {
 };
 
 const getDeviceFileCharacteristic = () => {
-  bleDevice.gatt
+  bleDevice.value.gatt
     .getPrimaryService(0xfebb)
     .then(async (service) => {
       fileServiceReady.value = false;
@@ -376,6 +530,14 @@ const handleFileNotifications = (event) => {
       message.error("Error deleting file. [" + status + "]");
     }
     loadDir(path.value);
+  } else if (value.getUint8(offset) == 0x21) {
+    offset++;
+    let status = value.getUint8(offset);
+    if (status == 0x01) {
+      //message.success("File created.");
+    } else {
+      message.error("Error creating file. [" + status + "]");
+    }
   } else {
     message.success("File Notification : " + value.getUint8(offset), {
       closable: true,
@@ -478,14 +640,106 @@ const deleteFile = (path) => {
   });
 };
 
+// eslint-disable-next-line no-unused-vars
+const createFile = (path, fileSize) => {
+  return new Promise((resolve) => {
+    let header = new Uint8Array(20);
+    let sizeP = toBytesInt16(path.length);
+    let sizeF = toBytesInt32(fileSize);
+
+    /*
+    Command (single byte): 0x20
+    1 byte of padding
+    Unsigned 16-bit integer encoding the length of the file path.
+    Unsigned 32-bit integer encoding the location at which to start writing to the file.
+    Unsigned 64-bit integer encoding the unix timestamp with nanosecond resolution. This will be used as the modification time. At the time of writing, this is not implemented in InfiniTime, but may be in the future.
+    Unsigned 32-bit integer encoding the size of the file that will be sent
+    File path: UTF-8 encoded string that is not null terminated.
+
+  */
+    header[0] = 0x20;
+    header[1] = 0x00;
+    header[2] = sizeP[1];
+    header[3] = sizeP[0];
+
+    header[4] = 0x00;
+    header[5] = 0x00;
+    header[6] = 0x00;
+    header[7] = 0x00;
+
+    header[8] = 0x00;
+    header[9] = 0x00;
+    header[10] = 0x00;
+    header[11] = 0x00;
+    header[12] = 0x00;
+    header[13] = 0x00;
+    header[14] = 0x00;
+    header[15] = 0x00;
+
+    header[16] = sizeF[3];
+    header[17] = sizeF[2];
+    header[18] = sizeF[1];
+    header[19] = sizeF[0];
+
+    let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
+
+    //console.log(value);
+    // eslint-disable-next-line no-unused-vars
+    fileTransfer.value.writeValue(value).then((_) => {
+      resolve();
+    });
+  });
+};
+
+const dataFile = (data, dataSize, offset) => {
+  return new Promise((resolve) => {
+    let header = new Uint8Array(12);
+
+    let aOffset = toBytesInt32(offset);
+    let sizeD = toBytesInt32(dataSize);
+
+    /*
+    Command (single byte): 0x22
+    Status: 0x01
+    2 bytes of padding.
+    Unsigned 32-bit integer encoding the location at which to write the next chunk.
+    Unsigned 32-bit integer encoding the amount of bytes to be written.
+    Data
+
+  */
+    header[0] = 0x22;
+    header[1] = 0x01;
+    header[2] = 0x00;
+    header[3] = 0x00;
+
+    header[4] = aOffset[3];
+    header[5] = aOffset[2];
+    header[6] = aOffset[1];
+    header[7] = aOffset[0];
+
+    header[8] = sizeD[3];
+    header[9] = sizeD[2];
+    header[10] = sizeD[1];
+    header[11] = sizeD[0];
+
+    let value = new Uint8Array([...header, ...data]);
+
+    //console.log(value);
+    // eslint-disable-next-line no-unused-vars
+    fileTransfer.value.writeValue(value).then((_) => {
+      resolve();
+    });
+  });
+};
+
 const disconnectDevice = () => {
   isConnected.value = false;
   fileServiceReady.value = false;
-  if (!bleDevice) {
+  if (!bleDevice.value) {
     return;
   }
-  if (bleDevice.gatt.connected) {
-    bleDevice.gatt.disconnect();
+  if (bleDevice.value.gatt.connected) {
+    bleDevice.value.gatt.disconnect();
   } else {
     message.success("Bluetooth Device is already disconnected");
   }
@@ -516,6 +770,18 @@ const padHex = (value) => {
 const toBytesInt16 = (num) => {
   let arr = new Uint8Array([(num & 0xff00) >> 8, num & 0x00ff]);
   return arr;
+};
+
+const toBytesInt32 = (num) => {
+  let arr = new ArrayBuffer(4); // an Int32 takes 4 bytes
+  let view = new DataView(arr);
+  view.setUint32(0, num, false); // byteOffset = 0; litteEndian = false
+  return new Uint8Array(arr);
+};
+
+// eslint-disable-next-line no-unused-vars
+const delay = (time) => {
+  return new Promise((resolve) => setTimeout(resolve, time));
 };
 </script>
 
