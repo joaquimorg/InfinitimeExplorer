@@ -1,4 +1,12 @@
-# infinitimeexplorer
+# InfiniTime File Explorer
+
+File Explorer for InfiniTime firmware on PineTime smartwatch
+
+View Live https://infinitimeexplorer.netlify.app/
+
+<img src="doc/explorer.jpg" />
+
+*https://www.pine64.org/pinetime/*
 
 ## Project setup
 ```
@@ -19,6 +27,3 @@ npm run build
 ```
 npm run lint
 ```
-
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).

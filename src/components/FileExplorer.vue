@@ -28,11 +28,15 @@
             <n-descriptions-item label="BLE FS Version">
               <n-tag type="primary">{{ fileServiceVersion }}</n-tag>
             </n-descriptions-item>
-
             <n-descriptions-item>
-              <n-button type="error" @click="disconnectDevice">
-                Disconnect
-              </n-button>
+              <n-space>
+                <n-button type="error" @click="disconnectDevice">
+                  Disconnect
+                </n-button>
+                <n-button type="info" dashed @click="reloadServices">
+                  Reload
+                </n-button>
+              </n-space>
             </n-descriptions-item>
           </n-descriptions>
         </n-card>
@@ -51,7 +55,7 @@
                   <n-button round type="warning" @click="loadDir('/')">
                     /
                   </n-button>
-                  <n-button round type="warning" @click="loadDir(path)">
+                  <n-button round type="success" @click="loadDir(path)">
                     <template #icon>
                       <n-icon size="14" :component="Redo" />
                     </template>
@@ -70,23 +74,28 @@
             </n-gi>
             <n-gi>
               <n-space vertical>
-                <n-progress
-                  type="line"
-                  status="error"
-                  :percentage="uploadingPercentage"
-                  :height="24"                  
-                  border-radius="12px 0 12px 0"
-                  fill-border-radius="12px 0 12px 0"
-                >
-                  {{ uploadingFile }}
-                </n-progress>
+                <div v-if="uploadingFile != ''">
+                  <n-progress
+                    type="line"
+                    status="error"
+                    :percentage="uploadingPercentage"
+                    :height="24"
+                    border-radius="12px 0 12px 0"
+                    fill-border-radius="12px 0 12px 0"
+                  >
+                    {{ uploadingFile }}
+                  </n-progress>
 
+                  {{ humanFileSize(uploadingSize, true, 2) }} of
+                  {{ humanFileSize(uploadingTotalSize, true, 2) }}
+                </div>
                 <n-upload
                   ref="uploadRef"
                   :default-upload="false"
                   multiple
                   @change="handleUploadChange"
                   accept=".bin,.res,.wf"
+                  :disabled="uploadingFile != ''"
                 >
                   <n-upload-dragger>
                     <div style="margin-bottom: 12px">
@@ -103,9 +112,10 @@
                   </n-upload-dragger>
                 </n-upload>
                 <n-button
-                  :disabled="!fileListLength"
+                  :disabled="!fileListLength || uploadingFile != ''"
                   style="margin-bottom: 12px"
                   @click="handleUpload"
+                  type="success"
                 >
                   Upload Files
                 </n-button>
@@ -180,6 +190,8 @@ const uploadRef = ref(null);
 const fileReadyTransfer = ref([]);
 
 const uploadingPercentage = ref(0);
+const uploadingTotalSize = ref(0);
+const uploadingSize = ref(0);
 const uploadingFile = ref("");
 
 const handleUploadChange = (data) => {
@@ -196,6 +208,7 @@ const handleUpload = () => {
     loadDir(path.value);
     uploadingFile.value = "";
     uploadingPercentage.value = 0;
+    uploadingTotalSize.value = 0;
   });
 };
 
@@ -219,6 +232,7 @@ const fileSend = (file) => {
     // create file
     createFile(path.value + "/" + file.name, file.size).then(() => {
       uploadingFile.value = file.name;
+      uploadingTotalSize.value = file.size;
 
       // send file data
       console.log("file created : " + file.name);
@@ -263,7 +277,8 @@ const fileSendData = (fileData, firmwareProgress) => {
       uploadingPercentage.value =
         (firmwareProgress / fileData.byteLength) * 100;
 
-      console.log(firmwareProgress);
+      //console.log(firmwareProgress);
+      uploadingSize.value = firmwareProgress;
       if (firmwareProgress < fileData.byteLength) {
         fileSendData(fileData, firmwareProgress).then(() => {
           resolve();
@@ -286,10 +301,8 @@ const createColumns = () => {
               NButton,
               {
                 size: "small",
-
                 onClick: () => {
-                  //path.value = row.file;
-                  //loadDir(path.value);
+                  message.info("Download not supported yet...");
                 },
               },
               { default: () => row.file }
@@ -298,7 +311,6 @@ const createColumns = () => {
               NButton,
               {
                 size: "small",
-
                 onClick: () => {
                   let navPath = row.file;
                   if (navPath == "..") {
@@ -321,7 +333,7 @@ const createColumns = () => {
       title: "Size",
       key: "size",
       render(row) {
-        return row.flags == 0 ? `${row.size} bytes` : null;
+        return row.flags == 0 ? humanFileSize(row.size, true, 2) : null;
       },
     },
     {
@@ -435,6 +447,10 @@ const getDeviceCharacteristic = () => {
         duration: 10000,
       });
     });
+};
+
+const reloadServices = () => {
+  getDeviceFileCharacteristic();
 };
 
 const getDeviceFileCharacteristic = () => {
@@ -758,6 +774,8 @@ const onDirCreate = () => {
   dirName.value = "";
 };
 
+// -----------------------------------------------------------------------------------
+
 const decode = (buf) => {
   let dec = new TextDecoder("utf-8");
   return dec.decode(buf);
@@ -782,6 +800,30 @@ const toBytesInt32 = (num) => {
 // eslint-disable-next-line no-unused-vars
 const delay = (time) => {
   return new Promise((resolve) => setTimeout(resolve, time));
+};
+
+const humanFileSize = (bytes, si = false, dp = 1) => {
+  const thresh = si ? 1000 : 1024;
+
+  if (Math.abs(bytes) < thresh) {
+    return bytes + " bytes";
+  }
+
+  const units = si
+    ? ["kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"]
+    : ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+  let u = -1;
+  const r = 10 ** dp;
+
+  do {
+    bytes /= thresh;
+    ++u;
+  } while (
+    Math.round(Math.abs(bytes) * r) / r >= thresh &&
+    u < units.length - 1
+  );
+
+  return bytes.toFixed(dp) + " " + units[u];
 };
 </script>
 
