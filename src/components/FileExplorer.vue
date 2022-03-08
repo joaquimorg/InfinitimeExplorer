@@ -48,7 +48,7 @@
           size="small"
           class="rounded-16px shadow-sm"
         >
-          <n-grid x-gap="12" :cols="2">
+          <n-grid x-gap="12" y-gap="8" cols="1 400:1 800:2">
             <n-gi>
               <n-space vertical>
                 <n-space>
