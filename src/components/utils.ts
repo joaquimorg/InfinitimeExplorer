@@ -15,7 +15,7 @@ export const useRenderAction = function (actions: TableActionModel[]) {
       NButton,
       {
         type: it.type || 'default',
-        size: 'small',
+        size: 'tiny',
         disabled: it.disabled,
         round: true,
         onClick: it.onClick,

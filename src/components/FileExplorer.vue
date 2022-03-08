@@ -55,7 +55,12 @@
                   <n-button round type="warning" @click="loadDir('/')">
                     /
                   </n-button>
-                  <n-button round type="success" @click="loadDir(path)">
+                  <n-button
+                    v-if="path != '/'"
+                    round
+                    type="success"
+                    @click="loadDir(path)"
+                  >
                     <template #icon>
                       <n-icon size="14" :component="Redo" />
                     </template>
@@ -69,6 +74,8 @@
                   :columns="columns"
                   :data="dataSource"
                   :pagination="false"
+                  size="small"
+                  :loading="loadingFolder"
                 />
               </n-space>
             </n-gi>
@@ -106,9 +113,6 @@
                     <n-text style="font-size: 16px">
                       Click or drag a file to this area to upload
                     </n-text>
-                    <n-p depth="3" style="margin: 8px 0 0 0">
-                      {{ path }}
-                    </n-p>
                   </n-upload-dragger>
                 </n-upload>
                 <n-button
@@ -117,7 +121,7 @@
                   @click="handleUpload"
                   type="success"
                 >
-                  Upload Files
+                  Upload Files to {{ path }}
                 </n-button>
               </n-space>
             </n-gi>
@@ -142,7 +146,7 @@
     negative-text="Cancel"
     @positive-click="onDirCreate"
   >
-    <div :style="{ maxHeight: '60vh', height: '5vh' }">
+    <div :style="{ maxHeight: '60vh' }">
       <n-scrollbar class="pl-5 pr-5">
         <div>
           <n-input
@@ -164,9 +168,13 @@
 
 <script setup>
 import { ref, h } from "vue";
-import { useMessage, NButton } from "naive-ui";
+
+// eslint-disable-next-line no-unused-vars
+import { useMessage, NButton, NIcon } from "naive-ui";
 import { useRenderAction } from "@/components/utils";
-import { Redo, FileUpload } from "@vicons/fa";
+
+// eslint-disable-next-line no-unused-vars
+import { Redo, FileUpload, Folder, File } from "@vicons/fa";
 
 const bleDevice = ref(null);
 const fileTransfer = ref(null);
@@ -184,6 +192,8 @@ const dirName = ref("");
 const showModal = ref(false);
 
 const path = ref("/");
+const loadingFolder = ref(true);
+const dataSource = ref([]);
 
 const fileListLength = ref(0);
 const uploadRef = ref(null);
@@ -204,7 +214,7 @@ const handleUpload = () => {
     fileListLength.value = 0;
     uploadRef.value.clear();
     fileReadyTransfer.value = [];
-    dataSource.value = [];
+    //dataSource.value = [];
     loadDir(path.value);
     uploadingFile.value = "";
     uploadingPercentage.value = 0;
@@ -301,6 +311,8 @@ const createColumns = () => {
               NButton,
               {
                 size: "small",
+                quaternary: true,
+                type: "primary",
                 onClick: () => {
                   message.info("Download not supported yet...");
                 },
@@ -311,6 +323,8 @@ const createColumns = () => {
               NButton,
               {
                 size: "small",
+                quaternary: true,
+                type: "info",
                 onClick: () => {
                   let navPath = row.file;
                   if (navPath == "..") {
@@ -334,6 +348,9 @@ const createColumns = () => {
       key: "size",
       render(row) {
         return row.flags == 0 ? humanFileSize(row.size, true, 2) : null;
+      },
+      ellipsis: {
+        tooltip: true,
       },
     },
     {
@@ -361,13 +378,18 @@ const createColumns = () => {
   ];
 };
 
-let columns = createColumns({
-  play(row) {
-    message.info(`${row.file}`);
-  },
-});
+const columns = createColumns();
 
-let dataSource = ref([]);
+/*
+const rowProps = (row) => {
+  return {
+    style: "cursor: pointer;",
+    onClick: () => {
+      message.info(row.file);
+    },
+  };
+};
+*/
 
 const connectDevice = () => {
   try {
@@ -517,8 +539,11 @@ const handleFileNotifications = (event) => {
     dirList.path = decode(value.buffer.slice(offset));
     //console.log(offset);
 
+    /*if ( dirList.entry == 0 && dataSource.value != []) {
+      dataSource.value = [];
+    }*/
+
     if (dirList.path_length != 0 && dirList.path != ".") {
-      // && dirList.path != ".."
       dataSource.value.push({
         key: dirList.entry,
         file: dirList.path,
@@ -527,8 +552,14 @@ const handleFileNotifications = (event) => {
       });
     }
 
-    //console.log(dirList);
-  } else if (value.getUint8(offset) == 0x41) {
+    if (dirList.path_length == 0) {
+      loadingFolder.value = false;
+      dataSource.value.sort(function (a, b) {
+        return b.flags - a.flags;
+      });
+    }
+
+  } else if (value.getUint8(offset) == 0x41) { // Create DIR
     offset++;
     let status = value.getUint8(offset);
     if (status == 0x01) {
@@ -537,7 +568,7 @@ const handleFileNotifications = (event) => {
       message.error("Error creating directory. [" + status + "]");
     }
     loadDir(path.value);
-  } else if (value.getUint8(offset) == 0x31) {
+  } else if (value.getUint8(offset) == 0x31) { // DeleteFile/Dir
     offset++;
     let status = value.getUint8(offset);
     if (status == 0x01) {
@@ -546,7 +577,7 @@ const handleFileNotifications = (event) => {
       message.error("Error deleting file. [" + status + "]");
     }
     loadDir(path.value);
-  } else if (value.getUint8(offset) == 0x21) {
+  } else if (value.getUint8(offset) == 0x21) { // File Upload
     offset++;
     let status = value.getUint8(offset);
     if (status == 0x01) {
@@ -566,6 +597,9 @@ const loadDir = (dirPath) => {
   if (dirPath == "") {
     dirPath = "/";
   }
+
+  dataSource.value = [];
+
   path.value = dirPath;
   let header = new Uint8Array(4);
   let size = toBytesInt16(dirPath.length);
@@ -587,7 +621,8 @@ const loadDir = (dirPath) => {
   //console.log(value);
 
   fileTransfer.value.writeValueWithoutResponse(value).then(function () {
-    dataSource.value = [];
+    //dataSource.value = [];
+    loadingFolder.value = true;
   });
 };
 
@@ -627,7 +662,7 @@ const makeDir = (path) => {
   //console.log(value);
 
   fileTransfer.value.writeValueWithoutResponse(value).then(function () {
-    dataSource.value = [];
+    //dataSource.value = [];
   });
 };
 
@@ -652,7 +687,7 @@ const deleteFile = (path) => {
   //console.log(value);
 
   fileTransfer.value.writeValueWithoutResponse(value).then(function () {
-    dataSource.value = [];
+    //dataSource.value = [];
   });
 };
 
