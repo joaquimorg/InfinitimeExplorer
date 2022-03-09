@@ -1,163 +1,167 @@
 
 <template>
-  <n-card title="Infinitime File Explorer">
-    <n-button type="success" v-if="!isConnected" @click="connectDevice">
-      Connect to Infinitime
-    </n-button>
+  <div style="margin: 20px">
+    <n-card size="huge" title="Infinitime File Explorer">
+      <n-space vertical>
+        <div></div>
+        <n-button type="success" v-if="!isConnected" @click="connectDevice">
+          Connect to Infinitime
+        </n-button>
+        <div v-if="isConnected">
+          <n-space vertical size="large">
+            <n-card
+              title="Device information"
+              :bordered="true"
+              size="small"
+              class="rounded-16px shadow-sm device"
+            >
+              <n-descriptions
+                label-placement="left"
+                bordered
+                size="small"
+                :column="1"
+              >
+                <n-descriptions-item label="Name">
+                  <n-tag type="primary">{{ deviceName }}</n-tag>
+                </n-descriptions-item>
+                <n-descriptions-item label="FW Version">
+                  <n-tag type="primary">{{ deviceVersion }}</n-tag>
+                </n-descriptions-item>
+                <n-descriptions-item label="BLE FS Version">
+                  <n-tag type="primary">{{ fileServiceVersion }}</n-tag>
+                </n-descriptions-item>
+                <n-descriptions-item>
+                  <n-space>
+                    <n-button type="error" @click="disconnectDevice">
+                      Disconnect
+                    </n-button>
+                    <n-button type="info" dashed @click="reloadServices">
+                      Reload
+                    </n-button>
+                  </n-space>
+                </n-descriptions-item>
+              </n-descriptions>
+            </n-card>
 
-    <div v-if="isConnected">
-      <n-space vertical size="large">
-        <n-card
-          title="Device information"
-          :bordered="true"
-          size="small"
-          class="rounded-16px shadow-sm device"
-        >
-          <n-descriptions
-            label-placement="left"
-            bordered
-            size="small"
-            :column="1"
-          >
-            <n-descriptions-item label="Name">
-              <n-tag type="primary">{{ deviceName }}</n-tag>
-            </n-descriptions-item>
-            <n-descriptions-item label="FW Version">
-              <n-tag type="primary">{{ deviceVersion }}</n-tag>
-            </n-descriptions-item>
-            <n-descriptions-item label="BLE FS Version">
-              <n-tag type="primary">{{ fileServiceVersion }}</n-tag>
-            </n-descriptions-item>
-            <n-descriptions-item>
-              <n-space>
-                <n-button type="error" @click="disconnectDevice">
-                  Disconnect
-                </n-button>
-                <n-button type="info" dashed @click="reloadServices">
-                  Reload
-                </n-button>
-              </n-space>
-            </n-descriptions-item>
-          </n-descriptions>
-        </n-card>
+            <n-card
+              v-if="fileServiceReady"
+              title="File Explorer"
+              :bordered="true"
+              size="small"
+              class="rounded-16px shadow-sm"
+            >
+              <n-grid x-gap="12" y-gap="8" cols="1 400:1 800:2">
+                <n-gi>
+                  <n-space vertical>
+                    <n-space>
+                      <n-button round type="warning" @click="loadDir('/')">
+                        /
+                      </n-button>
+                      <n-button
+                        v-if="path != '/'"
+                        round
+                        type="success"
+                        @click="loadDir(path)"
+                      >
+                        <template #icon>
+                          <n-icon size="14" :component="Redo" />
+                        </template>
+                        {{ path }}
+                      </n-button>
+                      <n-button round type="info" @click="showModal = true">
+                        Make dir
+                      </n-button>
+                    </n-space>
+                    <n-data-table
+                      :columns="columns"
+                      :data="dataSource"
+                      :pagination="false"
+                      size="small"
+                      :loading="loadingFolder"
+                    />
+                  </n-space>
+                </n-gi>
+                <n-gi>
+                  <n-space vertical>
+                    <div v-if="uploadingFile != ''">
+                      <n-progress
+                        type="line"
+                        status="error"
+                        :percentage="uploadingPercentage"
+                        :height="24"
+                        border-radius="12px 0 12px 0"
+                        fill-border-radius="12px 0 12px 0"
+                      >
+                        {{ uploadingFile }}
+                      </n-progress>
 
-        <n-card
-          v-if="fileServiceReady"
-          title="File Explorer"
-          :bordered="true"
-          size="small"
-          class="rounded-16px shadow-sm"
-        >
-          <n-grid x-gap="12" y-gap="8" cols="1 400:1 800:2">
-            <n-gi>
-              <n-space vertical>
-                <n-space>
-                  <n-button round type="warning" @click="loadDir('/')">
-                    /
-                  </n-button>
-                  <n-button
-                    v-if="path != '/'"
-                    round
-                    type="success"
-                    @click="loadDir(path)"
-                  >
-                    <template #icon>
-                      <n-icon size="14" :component="Redo" />
-                    </template>
-                    {{ path }}
-                  </n-button>
-                  <n-button round type="info" @click="showModal = true">
-                    Make dir
-                  </n-button>
-                </n-space>
-                <n-data-table
-                  :columns="columns"
-                  :data="dataSource"
-                  :pagination="false"
-                  size="small"
-                  :loading="loadingFolder"
-                />
-              </n-space>
-            </n-gi>
-            <n-gi>
-              <n-space vertical>
-                <div v-if="uploadingFile != ''">
-                  <n-progress
-                    type="line"
-                    status="error"
-                    :percentage="uploadingPercentage"
-                    :height="24"
-                    border-radius="12px 0 12px 0"
-                    fill-border-radius="12px 0 12px 0"
-                  >
-                    {{ uploadingFile }}
-                  </n-progress>
-
-                  {{ humanFileSize(uploadingSize, true, 2) }} of
-                  {{ humanFileSize(uploadingTotalSize, true, 2) }}
-                </div>
-                <n-upload
-                  ref="uploadRef"
-                  :default-upload="false"
-                  multiple
-                  @change="handleUploadChange"
-                  accept=".bin,.res,.wf"
-                  :disabled="uploadingFile != ''"
-                >
-                  <n-upload-dragger>
-                    <div style="margin-bottom: 12px">
-                      <n-icon size="48" :depth="3">
-                        <FileUpload />
-                      </n-icon>
+                      {{ humanFileSize(uploadingSize, true, 2) }} of
+                      {{ humanFileSize(uploadingTotalSize, true, 2) }}
                     </div>
-                    <n-text style="font-size: 16px">
-                      Click or drag a file to this area to upload
-                    </n-text>
-                  </n-upload-dragger>
-                </n-upload>
-                <n-button
-                  :disabled="!fileListLength || uploadingFile != ''"
-                  style="margin-bottom: 12px"
-                  @click="handleUpload"
-                  type="success"
-                >
-                  Upload Files to {{ path }}
-                </n-button>
+                    <n-upload
+                      ref="uploadRef"
+                      :default-upload="false"
+                      multiple
+                      @change="handleUploadChange"
+                      accept=".bin,.res,.wf"
+                      :disabled="uploadingFile != ''"
+                    >
+                      <n-upload-dragger>
+                        <div style="margin-bottom: 12px">
+                          <n-icon size="48" :depth="3">
+                            <FileUpload />
+                          </n-icon>
+                        </div>
+                        <n-text style="font-size: 16px">
+                          Click or drag a file to this area to upload
+                        </n-text>
+                      </n-upload-dragger>
+                    </n-upload>
+                    <n-button
+                      :disabled="!fileListLength || uploadingFile != ''"
+                      style="margin-bottom: 12px"
+                      @click="handleUpload"
+                      type="success"
+                    >
+                      Upload Files to {{ path }}
+                    </n-button>
+                  </n-space>
+                </n-gi>
+              </n-grid>
+            </n-card>
+            <div v-if="!fileServiceReady">
+              <n-space justify="center">
+                <n-spin size="large" />
               </n-space>
-            </n-gi>
-          </n-grid>
-        </n-card>
-        <div v-if="!fileServiceReady">
-          <n-space justify="center">
-            <n-spin size="large" />
+            </div>
           </n-space>
         </div>
       </n-space>
-    </div>
-  </n-card>
+    </n-card>
 
-  <n-modal
-    v-model:show="showModal"
-    :mask-closable="false"
-    preset="dialog"
-    title="Make directory"
-    content="Are you sure?"
-    positive-text="Confirm"
-    negative-text="Cancel"
-    @positive-click="onDirCreate"
-  >
-    <div :style="{ maxHeight: '60vh' }">
-      <n-scrollbar class="pl-5 pr-5">
-        <div>
-          <n-input
-            v-model:value="dirName"
-            type="text"
-            placeholder="Directory Name"
-          />
-        </div>
-      </n-scrollbar>
-    </div>
-  </n-modal>
+    <n-modal
+      v-model:show="showModal"
+      :mask-closable="false"
+      preset="dialog"
+      title="Make directory"
+      content="Are you sure?"
+      positive-text="Confirm"
+      negative-text="Cancel"
+      @positive-click="onDirCreate"
+    >
+      <div :style="{ maxHeight: '60vh' }">
+        <n-scrollbar class="pl-5 pr-5">
+          <div>
+            <n-input
+              v-model:value="dirName"
+              type="text"
+              placeholder="Directory Name"
+            />
+          </div>
+        </n-scrollbar>
+      </div>
+    </n-modal>
+  </div>
 </template>
 
 <style>
@@ -558,8 +562,8 @@ const handleFileNotifications = (event) => {
         return b.flags - a.flags;
       });
     }
-
-  } else if (value.getUint8(offset) == 0x41) { // Create DIR
+  } else if (value.getUint8(offset) == 0x41) {
+    // Create DIR
     offset++;
     let status = value.getUint8(offset);
     if (status == 0x01) {
@@ -568,7 +572,8 @@ const handleFileNotifications = (event) => {
       message.error("Error creating directory. [" + status + "]");
     }
     loadDir(path.value);
-  } else if (value.getUint8(offset) == 0x31) { // DeleteFile/Dir
+  } else if (value.getUint8(offset) == 0x31) {
+    // DeleteFile/Dir
     offset++;
     let status = value.getUint8(offset);
     if (status == 0x01) {
@@ -577,7 +582,8 @@ const handleFileNotifications = (event) => {
       message.error("Error deleting file. [" + status + "]");
     }
     loadDir(path.value);
-  } else if (value.getUint8(offset) == 0x21) { // File Upload
+  } else if (value.getUint8(offset) == 0x21) {
+    // File Upload
     offset++;
     let status = value.getUint8(offset);
     if (status == 0x01) {
