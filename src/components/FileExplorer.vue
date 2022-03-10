@@ -7,6 +7,7 @@
         <n-button type="success" v-if="!isConnected" @click="connectDevice">
           Connect to Infinitime
         </n-button>
+
         <div v-if="isConnected">
           <n-space vertical size="large">
             <n-card
@@ -83,6 +84,17 @@
                 </n-gi>
                 <n-gi>
                   <n-space vertical>
+                    <n-space>
+                      <n-upload
+                        :custom-request="resourceUpload"
+                        accept=".res"
+                        :disabled="uploadingFile != ''"
+                      >
+                        <n-button secondary round type="success">
+                          Upload resource file
+                        </n-button>
+                      </n-upload>
+                    </n-space>
                     <div v-if="uploadingFile != ''">
                       <n-progress
                         type="line"
@@ -103,7 +115,7 @@
                       :default-upload="false"
                       multiple
                       @change="handleUploadChange"
-                      accept=".bin,.res,.wf"
+                      accept=".bin"
                       :disabled="uploadingFile != ''"
                     >
                       <n-upload-dragger>
@@ -180,6 +192,8 @@ import { useRenderAction } from "@/components/utils";
 // eslint-disable-next-line no-unused-vars
 import { Redo, FileUpload, Folder, File } from "@vicons/fa";
 
+import JsZip from "jszip";
+
 const bleDevice = ref(null);
 const fileTransfer = ref(null);
 
@@ -249,17 +263,18 @@ const fileSend = (file) => {
       uploadingTotalSize.value = file.size;
 
       // send file data
-      console.log("file created : " + file.name);
+      //console.log("file created : " + file.name);
+      message.success("Uploading file : " + file.name);
 
       let reader = new FileReader();
       reader.onload = (f) => {
         if (f.target.result.byteLength > 0) {
           let fileSource = new Uint8Array(f.target.result);
-          console.log("local file read");
-          console.log("file size : " + fileSource.byteLength);
+          //console.log("local file read");
+          //console.log("file size : " + fileSource.byteLength);
           fileSendData(fileSource, 0)
             .then(() => {
-              console.log("file send");
+              //console.log("file send");
               resolve();
             })
             .catch((error) => {
@@ -813,6 +828,49 @@ const onDirCreate = () => {
   }
   makeDir(path.value + dirName.value);
   dirName.value = "";
+};
+
+// -----------------------------------------------------------------------------------
+// handle resource file upload
+const resourceUpload = ({ file, onFinish }) => {
+  message.success("Reading resource file " + file.file.name);
+
+  let reader = new FileReader();
+  reader.onload = (f) => {
+    if (f.target.result.byteLength > 0) {
+      let fileSource = new Uint8Array(f.target.result);
+      console.log("local res file read");
+      console.log("file size : " + fileSource.byteLength);
+
+      let resZip = new JsZip();
+      resZip.loadAsync(fileSource).then(function (zip) {
+        // you now have every files contained in the loaded zip
+
+        zip.forEach(function (relativePath, zipEntry) {
+          if (zipEntry.dir) {
+            relativePath = relativePath.slice(0, -1);
+            console.log("Creating directory " + relativePath + "");
+            message.success("Creating directory " + relativePath + "");
+            //makeDir("/" + relativePath);
+          } else {
+            console.log("Uploading file " + relativePath + "");
+            message.success("Uploading file " + relativePath + "");
+            /*let fileName = zipEntry.name;
+            let fileSize = zipEntry.uncompressedSize;
+            let fileData = zipEntry.async("uint8array");*/
+          }
+        });
+      });
+    }
+  };
+  reader.onerror = function () {
+    reader.abort();
+    console.log("Failed to read file : " + reader.error);
+  };
+
+  reader.readAsArrayBuffer(file.file);
+
+  onFinish();
 };
 
 // -----------------------------------------------------------------------------------
