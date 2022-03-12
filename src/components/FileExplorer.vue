@@ -55,11 +55,17 @@
                 <n-gi>
                   <n-space vertical>
                     <n-space>
-                      <n-button round type="warning" @click="loadDir('/')">
+                      <n-button
+                        :disabled="uploadingFile != ''"
+                        round
+                        type="warning"
+                        @click="loadDir('/')"
+                      >
                         /
                       </n-button>
                       <n-button
                         v-if="path != '/'"
+                        :disabled="uploadingFile != ''"
                         round
                         type="success"
                         @click="loadDir(path)"
@@ -69,54 +75,39 @@
                         </template>
                         {{ path }}
                       </n-button>
-                      <n-button round type="info" @click="showModal = true">
+                      <n-button
+                        :disabled="uploadingFile != ''"
+                        round
+                        type="info"
+                        @click="showModal = true"
+                      >
                         Make dir
                       </n-button>
                     </n-space>
                     <n-data-table
-                      :columns="columns"
-                      :data="dataSource"
+                      :columns="deviceFileListColumns"
+                      :data="deviceFileList"
                       :pagination="false"
                       size="small"
-                      :loading="loadingFolder"
+                      :loading="loadingFolder || uploadingFile != ''"
                     />
                   </n-space>
                 </n-gi>
                 <n-gi>
-                  <n-space vertical>
+                  <div v-if="!showUploadList">
                     <n-space>
-                      <n-upload
-                        :custom-request="resourceUpload"
-                        accept=".res"
-                        :disabled="uploadingFile != ''"
-                      >
+                      <n-upload :custom-request="resourceUpload" accept=".res">
                         <n-button secondary round type="success">
-                          Upload resource file
+                          Open resource file
                         </n-button>
                       </n-upload>
                     </n-space>
-                    <div v-if="uploadingFile != ''">
-                      <n-progress
-                        type="line"
-                        status="error"
-                        :percentage="uploadingPercentage"
-                        :height="24"
-                        border-radius="12px 0 12px 0"
-                        fill-border-radius="12px 0 12px 0"
-                      >
-                        {{ uploadingFile }}
-                      </n-progress>
-
-                      {{ humanFileSize(uploadingSize, true, 2) }} of
-                      {{ humanFileSize(uploadingTotalSize, true, 2) }}
-                    </div>
                     <n-upload
                       ref="uploadRef"
                       :default-upload="false"
                       multiple
                       @change="handleUploadChange"
                       accept=".bin"
-                      :disabled="uploadingFile != ''"
                     >
                       <n-upload-dragger>
                         <div style="margin-bottom: 12px">
@@ -134,10 +125,74 @@
                       style="margin-bottom: 12px"
                       @click="handleUpload"
                       type="success"
+                      round
                     >
                       Upload Files to {{ path }}
                     </n-button>
-                  </n-space>
+                  </div>
+                  <div v-else>
+                    <n-alert title="Upload files" type="success">
+                      <template #icon>
+                        <n-icon>
+                          <FileUpload />
+                        </n-icon>
+                      </template>
+                      <n-space vertical>
+                        <n-space>
+                          <n-button
+                            v-if="uploadingFile == '' && uploadingResFile != ''"
+                            style="margin-bottom: 12px"
+                            @click="handleUploadRes"
+                            type="success"
+                            round
+                          >
+                            Upload Files
+                          </n-button>
+
+                          <n-button
+                            v-if="uploadingFile == '' && uploadingResFile != ''"
+                            style="margin-bottom: 12px"
+                            @click="handleUploadResCancel"
+                            type="error"
+                            round
+                          >
+                            Cancelar
+                          </n-button>
+                        </n-space>
+                        <div v-if="uploadingFile != ''">
+                          <n-progress
+                            type="line"
+                            status="error"
+                            :percentage="uploadingPercentage"
+                            :height="24"
+                            border-radius="12px 0 12px 0"
+                            fill-border-radius="12px 0 12px 0"
+                            :show-indicator="false"
+                          />
+                          <n-space vertical>
+                            <div>
+                              {{ uploadingFile }}
+                            </div>
+                            <div>
+                              {{ humanFileSize(uploadingSize, true, 2) }} of
+                              {{ humanFileSize(uploadingTotalSize, true, 2) }}
+                            </div>
+                          </n-space>
+                        </div>
+                        <div v-if="uploadingResFile != ''">
+                          Resource file {{ uploadingResFile }}
+                        </div>
+
+                        <n-data-table
+                          :columns="uploadFileListColumns"
+                          :data="fileToTransfer"
+                          :pagination="false"
+                          size="small"
+                          :row-class-name="rowClassName"
+                        />
+                      </n-space>
+                    </n-alert>
+                  </div>
                 </n-gi>
               </n-grid>
             </n-card>
@@ -180,17 +235,41 @@
 .n-card .device {
   max-width: 400px;
 }
+
+.pending td, .pending .n-text {
+  color: rgba(0, 255, 255, 1) !important;
+}
+
+.uploading td, .uploading .n-text {
+  color: rgba(255, 255, 0, 1) !important;
+}
+
+.finished td, .finished .n-text {
+  color: rgba(0, 255, 0, 1) !important;
+}
+
+.error td, .error .n-text {
+  color: rgba(255, 0, 0, 1) !important;
+}
+
 </style>
 
 <script setup>
 import { ref, h } from "vue";
 
 // eslint-disable-next-line no-unused-vars
-import { useMessage, NButton, NIcon } from "naive-ui";
+import { useMessage, NButton, NIcon, NSpace, NText } from "naive-ui";
 import { useRenderAction } from "@/components/utils";
 
 // eslint-disable-next-line no-unused-vars
-import { Redo, FileUpload, Folder, File } from "@vicons/fa";
+import {
+  Redo,
+  FileUpload,
+  FolderOpen,
+  File,
+  LevelUpAlt,
+  FolderPlus,
+} from "@vicons/fa";
 
 import JsZip from "jszip";
 
@@ -211,7 +290,7 @@ const showModal = ref(false);
 
 const path = ref("/");
 const loadingFolder = ref(true);
-const dataSource = ref([]);
+const deviceFileList = ref([]);
 
 const fileListLength = ref(0);
 const uploadRef = ref(null);
@@ -221,6 +300,10 @@ const uploadingPercentage = ref(0);
 const uploadingTotalSize = ref(0);
 const uploadingSize = ref(0);
 const uploadingFile = ref("");
+const uploadingResFile = ref("");
+
+const showUploadList = ref(false);
+const fileToTransfer = ref([]);
 
 const handleUploadChange = (data) => {
   fileListLength.value = data.fileList.length;
@@ -228,67 +311,132 @@ const handleUploadChange = (data) => {
 };
 
 const handleUpload = () => {
-  fileUpload(0).then(() => {
-    fileListLength.value = 0;
-    uploadRef.value.clear();
-    fileReadyTransfer.value = [];
-    //dataSource.value = [];
-    loadDir(path.value);
-    uploadingFile.value = "";
-    uploadingPercentage.value = 0;
-    uploadingTotalSize.value = 0;
+  showUploadList.value = true;
+  fileToTransfer.value = [];
+  fileReadyTransfer.value.forEach((file) => {
+    const fileData = {};
+    fileData.name = path.value + "/" + file.file.name;
+    fileData.size = file.file.size;
+    fileData.status = "pending";
+    fileData.data = null;
+    fileData.file = file.file;
+    fileData.type = "file";
+    fileToTransfer.value.push(fileData);
   });
+
+  fileUpload(0)
+    .then(async () => {
+      fileListLength.value = 0;
+      //uploadRef.value.clear();
+      fileReadyTransfer.value = [];
+      loadDir(path.value);
+      uploadingFile.value = "";
+      uploadingPercentage.value = 0;
+      uploadingTotalSize.value = 0;
+      showUploadList.value = false;
+      fileToTransfer.value = [];
+    })
+    .catch((err) => {
+      message.error(err);
+      showUploadList.value = false;
+      uploadingFile.value = "";
+      uploadingPercentage.value = 0;
+      uploadingTotalSize.value = 0;
+      fileToTransfer.value = [];
+    });
 };
 
 const fileUpload = (filePos) => {
-  return new Promise((resolve /*, reject*/) => {
-    fileSend(fileReadyTransfer.value[filePos].file).then(() => {
-      filePos++;
-      if (filePos < fileReadyTransfer.value.length) {
-        fileUpload(filePos).then(() => {
-          resolve();
-        });
+  return new Promise((resolve, reject) => {
+    if (filePos + 1 > fileToTransfer.value.length) {
+      resolve();
+    } else {
+      if (fileToTransfer.value[filePos].type == "file") {
+        fileToTransfer.value[filePos].status = "uploading";
+        fileSend(fileToTransfer.value[filePos])
+          .then(() => {
+            fileToTransfer.value[filePos].status = "finished";
+            filePos++;
+            fileUpload(filePos).then(() => {
+              resolve();
+            });
+          })
+          .catch((e) => {
+            fileToTransfer.value[filePos].status = "error";
+            filePos++;
+            reject("fileUpload error: " + e);
+          });
       } else {
-        resolve();
+        fileToTransfer.value[filePos].status = "creating";
+        makeDir(fileToTransfer.value[filePos].name)
+          .then(() => {
+            fileToTransfer.value[filePos].status = "finished";
+            filePos++;
+            fileUpload(filePos).then(() => {
+              resolve();
+            });
+          })
+          .catch((e) => {
+            fileToTransfer.value[filePos].status = "error";
+            filePos++;
+            reject("fileUpload error: " + e);
+          });
       }
-    });
+    }
   });
 };
 
 const fileSend = (file) => {
-  return new Promise((resolve /*, reject*/) => {
+  return new Promise((resolve, reject) => {
     // create file
-    createFile(path.value + "/" + file.name, file.size).then(() => {
-      uploadingFile.value = file.name;
-      uploadingTotalSize.value = file.size;
+    createFile(file.name, file.size)
+      .then(() => {
+        uploadingFile.value = file.name;
+        uploadingTotalSize.value = file.size;
 
-      // send file data
-      //console.log("file created : " + file.name);
-      message.success("Uploading file : " + file.name);
+        // send file data
+        //console.log("file created : " + file.name);
+        message.success("Uploading file : " + file.name);
 
-      let reader = new FileReader();
-      reader.onload = (f) => {
-        if (f.target.result.byteLength > 0) {
-          let fileSource = new Uint8Array(f.target.result);
-          //console.log("local file read");
-          //console.log("file size : " + fileSource.byteLength);
-          fileSendData(fileSource, 0)
+        if (file.data == null) {
+          let reader = new FileReader();
+          reader.onload = (f) => {
+            if (f.target.result.byteLength > 0) {
+              let fileSource = new Uint8Array(f.target.result);
+              //console.log("local file read");
+              //console.log("file size : " + fileSource.byteLength);
+              fileSendData(fileSource, 0)
+                .then(() => {
+                  //console.log("file send");
+                  resolve();
+                })
+                .catch((error) => {
+                  console.log("fileSend fileSendData : " + error);
+                  reject("fileSendData : " + error);
+                });
+            }
+          };
+          reader.onerror = function () {
+            reader.abort();
+            console.log("Failed to read file : " + reader.error);
+          };
+
+          reader.readAsArrayBuffer(file.file);
+        } else {
+          fileSendData(file.data, 0)
             .then(() => {
               //console.log("file send");
               resolve();
             })
             .catch((error) => {
               console.log("fileSend fileSendData : " + error);
+              reject("fileSendData : " + error);
             });
         }
-      };
-      reader.onerror = function () {
-        reader.abort();
-        console.log("Failed to read file : " + reader.error);
-      };
-
-      reader.readAsArrayBuffer(file);
-    });
+      })
+      .catch((e) => {
+        reject("createFile : " + e);
+      });
   });
 };
 
@@ -319,7 +467,7 @@ const fileSendData = (fileData, firmwareProgress) => {
   });
 };
 
-const createColumns = () => {
+const createFileListColumns = () => {
   return [
     {
       title: "File",
@@ -336,7 +484,19 @@ const createColumns = () => {
                   message.info("Download not supported yet...");
                 },
               },
-              { default: () => row.file }
+              {
+                default: () =>
+                  h(
+                    NSpace,
+                    { style: { padding: "6px" } },
+                    {
+                      default: () => [
+                        h(NIcon, null, { default: () => h(File) }),
+                        h(NText, null, { default: () => row.file }),
+                      ],
+                    }
+                  ),
+              }
             )
           : h(
               NButton,
@@ -358,7 +518,22 @@ const createColumns = () => {
                   loadDir(navPath);
                 },
               },
-              { default: () => row.file }
+              {
+                default: () =>
+                  h(
+                    NSpace,
+                    { style: { padding: "6px" } },
+                    {
+                      default: () => [
+                        h(NIcon, null, {
+                          default: () =>
+                            h(row.file == ".." ? LevelUpAlt : FolderOpen),
+                        }),
+                        h(NText, null, { default: () => row.file }),
+                      ],
+                    }
+                  ),
+              }
             );
       },
     },
@@ -387,7 +562,9 @@ const createColumns = () => {
                   } else {
                     navPath = path.value + "/" + navPath;
                   }
-                  deleteFile(navPath);
+                  deleteFile(navPath).then(() => {
+                    loadDir(path.value);
+                  });
                 },
               },
             ])
@@ -396,19 +573,129 @@ const createColumns = () => {
     },
   ];
 };
+const deviceFileListColumns = createFileListColumns();
 
-const columns = createColumns();
-
-/*
-const rowProps = (row) => {
-  return {
-    style: "cursor: pointer;",
-    onClick: () => {
-      message.info(row.file);
+const createUploadFileListColumns = () => {
+  return [
+    {
+      title: "Name",
+      key: "name",
+      render(row) {
+        return h(
+          NSpace,
+          { style: { padding: "6px" } },
+          {
+            default: () => [
+              h(NIcon, null, {
+                default: () => h(row.type == "file" ? FileUpload : FolderPlus),
+              }),
+              h(NText, null, { default: () => row.name }),
+            ],
+          }
+        );
+      },
     },
-  };
+    {
+      title: "",
+      key: "status",
+    },
+  ];
 };
-*/
+const uploadFileListColumns = createUploadFileListColumns();
+
+// eslint-disable-next-line no-unused-vars
+const rowClassName = (row, index) => {        
+  return row.status;
+};
+
+// -----------------------------------------------------------------------------------
+// handle resource file upload
+const resourceUpload = ({ file, onFinish }) => {
+  message.success("Reading resource file " + file.file.name);
+  uploadingResFile.value = file.file.name;
+  let reader = new FileReader();
+  reader.onload = (f) => {
+    if (f.target.result.byteLength > 0) {
+      let fileSource = new Uint8Array(f.target.result);
+      console.log("local res file read");
+      console.log("file size : " + fileSource.byteLength);
+
+      let resZip = new JsZip();
+      resZip.loadAsync(fileSource).then(function (zip) {
+        // you now have every files contained in the loaded zip
+        fileToTransfer.value = [];
+        zip.forEach(function (relativePath, zipEntry) {
+          const fileData = {};
+          if (zipEntry.dir) {
+            relativePath = relativePath.slice(0, -1);
+            //console.log("Directory " + relativePath + "");
+            fileData.name = "/" + relativePath;
+            fileData.type = "dir";
+            fileData.status = "pending";
+            fileData.size = 0;
+            fileToTransfer.value.push(fileData);
+            //message.success("Creating directory " + relativePath + "");
+            //makeDir("/" + relativePath);
+          } else {
+            //message.success("Uploading file " + relativePath + "");            
+            zipEntry.async("uint8array").then(function (data) {
+              fileData.name = "/" + relativePath;
+              fileData.data = data;
+              fileData.size = data.length;
+              fileData.status = "pending";
+              fileData.type = "file";
+              fileToTransfer.value.push(fileData);
+              //console.log("File " + relativePath + "");
+            });
+          }
+          showUploadList.value = true;
+        });
+      });
+    }
+  };
+  reader.onerror = function () {
+    reader.abort();
+    console.log("Failed to read file : " + reader.error);
+  };
+
+  reader.readAsArrayBuffer(file.file);
+
+  onFinish();
+};
+
+const handleUploadRes = () => {
+  fileUpload(0)
+    .then(() => {
+      uploadingFile.value = "";
+      uploadingPercentage.value = 0;
+      uploadingTotalSize.value = 0;
+      showUploadList.value = false;
+      fileToTransfer.value = [];
+      uploadingResFile.value = "";
+      loadDir(path.value);
+    })
+    .catch((err) => {
+      message.error(err);
+      console.log("Resource upload error : " + err);
+      uploadingResFile.value = "";
+      showUploadList.value = false;
+      uploadingFile.value = "";
+      uploadingPercentage.value = 0;
+      uploadingTotalSize.value = 0;
+      fileToTransfer.value = [];
+    });
+};
+
+const handleUploadResCancel = () => {
+  uploadingResFile.value = "";
+  showUploadList.value = false;
+  uploadingFile.value = "";
+  uploadingPercentage.value = 0;
+  uploadingTotalSize.value = 0;
+  fileToTransfer.value = [];
+};
+
+// ------------------------------------------------------------------------------
 
 const connectDevice = () => {
   try {
@@ -558,12 +845,8 @@ const handleFileNotifications = (event) => {
     dirList.path = decode(value.buffer.slice(offset));
     //console.log(offset);
 
-    /*if ( dirList.entry == 0 && dataSource.value != []) {
-      dataSource.value = [];
-    }*/
-
     if (dirList.path_length != 0 && dirList.path != ".") {
-      dataSource.value.push({
+      deviceFileList.value.push({
         key: dirList.entry,
         file: dirList.path,
         size: dirList.file_size,
@@ -573,7 +856,7 @@ const handleFileNotifications = (event) => {
 
     if (dirList.path_length == 0) {
       loadingFolder.value = false;
-      dataSource.value.sort(function (a, b) {
+      deviceFileList.value.sort(function (a, b) {
         return b.flags - a.flags;
       });
     }
@@ -584,9 +867,9 @@ const handleFileNotifications = (event) => {
     if (status == 0x01) {
       message.success("Directory created.");
     } else {
-      message.error("Error creating directory. [" + status + "]");
+      console.log("Error creating directory. [" + status + "]");
     }
-    loadDir(path.value);
+    //loadDir(path.value);
   } else if (value.getUint8(offset) == 0x31) {
     // DeleteFile/Dir
     offset++;
@@ -596,7 +879,7 @@ const handleFileNotifications = (event) => {
     } else {
       message.error("Error deleting file. [" + status + "]");
     }
-    loadDir(path.value);
+    //loadDir(path.value);
   } else if (value.getUint8(offset) == 0x21) {
     // File Upload
     offset++;
@@ -615,106 +898,131 @@ const handleFileNotifications = (event) => {
 };
 
 const loadDir = (dirPath) => {
-  if (dirPath == "") {
-    dirPath = "/";
-  }
+  return new Promise((resolve, reject) => {
+    if (dirPath == "") {
+      dirPath = "/";
+    }
 
-  dataSource.value = [];
+    deviceFileList.value = [];
 
-  path.value = dirPath;
-  let header = new Uint8Array(4);
-  let size = toBytesInt16(dirPath.length);
+    path.value = dirPath;
+    let header = new Uint8Array(4);
+    let size = toBytesInt16(dirPath.length);
 
-  /*
-    Command (single byte): 0x50
-    1 byte of padding
-    Unsigned 16-bit integer encoding the length of the file path.
-    File path: UTF-8 encoded string that is not null terminated.
+    /*
+      Command (single byte): 0x50
+      1 byte of padding
+      Unsigned 16-bit integer encoding the length of the file path.
+      File path: UTF-8 encoded string that is not null terminated.
 
-  */
-  header[0] = 0x50;
-  header[1] = 0x00;
-  header[2] = size[1];
-  header[3] = size[0];
+    */
+    header[0] = 0x50;
+    header[1] = 0x00;
+    header[2] = size[1];
+    header[3] = size[0];
 
-  let value = new Uint8Array([...header, ...new TextEncoder().encode(dirPath)]);
+    let value = new Uint8Array([
+      ...header,
+      ...new TextEncoder().encode(dirPath),
+    ]);
 
-  //console.log(value);
+    //console.log(value);
 
-  fileTransfer.value.writeValueWithoutResponse(value).then(function () {
-    //dataSource.value = [];
-    loadingFolder.value = true;
+    fileTransfer.value
+      .writeValueWithoutResponse(value)
+      .then(function () {
+        //deviceFileList.value = [];
+        loadingFolder.value = true;
+        resolve();
+      })
+      .catch(function (error) {
+        reject("loadDir error : " + error);
+      });
   });
 };
 
 const makeDir = (path) => {
-  let header = new Uint8Array(16);
-  let size = toBytesInt16(path.length);
+  return new Promise((resolve, reject) => {
+    let header = new Uint8Array(16);
+    let size = toBytesInt16(path.length);
 
-  /*
-    Command (single byte): 0x40
-    1 byte of padding
-    Unsigned 16-bit integer encoding the length of the file path.
-    4 bytes of padding
-    Unsigned 64-bit integer encoding the unix timestamp with nanosecond resolution.
-    File path: UTF-8 encoded string that is not null terminated.
+    /*
+      Command (single byte): 0x40
+      1 byte of padding
+      Unsigned 16-bit integer encoding the length of the file path.
+      4 bytes of padding
+      Unsigned 64-bit integer encoding the unix timestamp with nanosecond resolution.
+      File path: UTF-8 encoded string that is not null terminated.
 
-  */
-  header[0] = 0x40;
-  header[1] = 0x00;
-  header[2] = size[1];
-  header[3] = size[0];
-  header[4] = 0x00;
-  header[5] = 0x00;
-  header[6] = 0x00;
-  header[7] = 0x00;
+    */
+    header[0] = 0x40;
+    header[1] = 0x00;
+    header[2] = size[1];
+    header[3] = size[0];
+    header[4] = 0x00;
+    header[5] = 0x00;
+    header[6] = 0x00;
+    header[7] = 0x00;
 
-  header[8] = 0x00;
-  header[9] = 0x00;
-  header[10] = 0x00;
-  header[11] = 0x00;
-  header[12] = 0x00;
-  header[13] = 0x00;
-  header[14] = 0x00;
-  header[15] = 0x00;
+    header[8] = 0x00;
+    header[9] = 0x00;
+    header[10] = 0x00;
+    header[11] = 0x00;
+    header[12] = 0x00;
+    header[13] = 0x00;
+    header[14] = 0x00;
+    header[15] = 0x00;
 
-  let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
+    let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
 
-  //console.log(value);
+    //console.log(value);
 
-  fileTransfer.value.writeValueWithoutResponse(value).then(function () {
-    //dataSource.value = [];
+    fileTransfer.value
+      .writeValue(value)
+      .then(function () {
+        resolve();
+      })
+      .catch(function (error) {
+        reject("makeDir error : " + error);
+      });
   });
 };
 
 const deleteFile = (path) => {
-  let header = new Uint8Array(4);
-  let size = toBytesInt16(path.length);
+  return new Promise((resolve, reject) => {
+    let header = new Uint8Array(4);
+    let size = toBytesInt16(path.length);
 
-  /*
-    Command (single byte): 0x30
-    1 byte of padding
-    Unsigned 16-bit integer encoding the length of the file path.
-    File path: UTF-8 encoded string that is not null terminated.
+    /*
+      Command (single byte): 0x30
+      1 byte of padding
+      Unsigned 16-bit integer encoding the length of the file path.
+      File path: UTF-8 encoded string that is not null terminated.
 
-  */
-  header[0] = 0x30;
-  header[1] = 0x00;
-  header[2] = size[1];
-  header[3] = size[0];
+    */
+    header[0] = 0x30;
+    header[1] = 0x00;
+    header[2] = size[1];
+    header[3] = size[0];
 
-  let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
+    let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
 
-  //console.log(value);
+    //console.log(value);
 
-  fileTransfer.value.writeValueWithoutResponse(value).then(function () {
-    //dataSource.value = [];
+    fileTransfer.value
+      .writeValue(value)
+      .then(function () {
+        //deviceFileList.value = [];
+        resolve();
+      })
+      .catch(function (error) {
+        reject("deleteFile error : " + error);
+      });
   });
 };
 
-// eslint-disable-next-line no-unused-vars
 const createFile = (path, fileSize) => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let header = new Uint8Array(20);
     let sizeP = toBytesInt16(path.length);
     let sizeF = toBytesInt32(fileSize);
@@ -756,10 +1064,14 @@ const createFile = (path, fileSize) => {
     let value = new Uint8Array([...header, ...new TextEncoder().encode(path)]);
 
     //console.log(value);
-    // eslint-disable-next-line no-unused-vars
-    fileTransfer.value.writeValue(value).then((_) => {
-      resolve();
-    });
+    fileTransfer.value
+      .writeValue(value)
+      .then(() => {
+        resolve();
+      })
+      .catch((e) => {
+        reject(e);
+      });
   });
 };
 
@@ -797,8 +1109,7 @@ const dataFile = (data, dataSize, offset) => {
     let value = new Uint8Array([...header, ...data]);
 
     //console.log(value);
-    // eslint-disable-next-line no-unused-vars
-    fileTransfer.value.writeValue(value).then((_) => {
+    fileTransfer.value.writeValue(value).then(() => {
       resolve();
     });
   });
@@ -826,51 +1137,11 @@ const onDirCreate = () => {
   if (!path.value.endsWith("/")) {
     dirName.value = "/" + dirName.value;
   }
-  makeDir(path.value + dirName.value);
-  dirName.value = "";
-};
-
-// -----------------------------------------------------------------------------------
-// handle resource file upload
-const resourceUpload = ({ file, onFinish }) => {
-  message.success("Reading resource file " + file.file.name);
-
-  let reader = new FileReader();
-  reader.onload = (f) => {
-    if (f.target.result.byteLength > 0) {
-      let fileSource = new Uint8Array(f.target.result);
-      console.log("local res file read");
-      console.log("file size : " + fileSource.byteLength);
-
-      let resZip = new JsZip();
-      resZip.loadAsync(fileSource).then(function (zip) {
-        // you now have every files contained in the loaded zip
-
-        zip.forEach(function (relativePath, zipEntry) {
-          if (zipEntry.dir) {
-            relativePath = relativePath.slice(0, -1);
-            console.log("Creating directory " + relativePath + "");
-            message.success("Creating directory " + relativePath + "");
-            //makeDir("/" + relativePath);
-          } else {
-            console.log("Uploading file " + relativePath + "");
-            message.success("Uploading file " + relativePath + "");
-            /*let fileName = zipEntry.name;
-            let fileSize = zipEntry.uncompressedSize;
-            let fileData = zipEntry.async("uint8array");*/
-          }
-        });
-      });
-    }
-  };
-  reader.onerror = function () {
-    reader.abort();
-    console.log("Failed to read file : " + reader.error);
-  };
-
-  reader.readAsArrayBuffer(file.file);
-
-  onFinish();
+  makeDir(path.value + dirName.value).then(() => {
+    message.success("Directory created");
+    dirName.value = "";
+    loadDir(path.value);
+  });
 };
 
 // -----------------------------------------------------------------------------------
