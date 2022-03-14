@@ -189,6 +189,9 @@
                           :pagination="false"
                           size="small"
                           :row-class-name="rowClassName"
+                          :row-key="(row) => row.name"
+                          :default-checked-row-keys="fileToTransferChecked"
+                          @update:checked-row-keys="handlefileToTransferCheck"
                         />
                       </n-space>
                     </n-alert>
@@ -236,22 +239,25 @@
   max-width: 400px;
 }
 
-.pending td, .pending .n-text {
+.pending td,
+.pending .n-text {
   color: rgba(0, 255, 255, 1) !important;
 }
 
-.uploading td, .uploading .n-text {
+.uploading td,
+.uploading .n-text {
   color: rgba(255, 255, 0, 1) !important;
 }
 
-.finished td, .finished .n-text {
+.finished td,
+.finished .n-text {
   color: rgba(0, 255, 0, 1) !important;
 }
 
-.error td, .error .n-text {
+.error td,
+.error .n-text {
   color: rgba(255, 0, 0, 1) !important;
 }
-
 </style>
 
 <script setup>
@@ -280,6 +286,8 @@ const isConnected = ref(false);
 const fileServiceReady = ref(false);
 const message = useMessage();
 
+const mtuSize = ref(200);
+
 const deviceName = ref("");
 const deviceVersion = ref("");
 const fileServiceVersion = ref(0);
@@ -289,7 +297,7 @@ const dirName = ref("");
 const showModal = ref(false);
 
 const path = ref("/");
-const loadingFolder = ref(true);
+const loadingFolder = ref(false);
 const deviceFileList = ref([]);
 
 const fileListLength = ref(0);
@@ -304,6 +312,7 @@ const uploadingResFile = ref("");
 
 const showUploadList = ref(false);
 const fileToTransfer = ref([]);
+const fileToTransferChecked = ref([]);
 
 const handleUploadChange = (data) => {
   fileListLength.value = data.fileList.length;
@@ -313,6 +322,7 @@ const handleUploadChange = (data) => {
 const handleUpload = () => {
   showUploadList.value = true;
   fileToTransfer.value = [];
+  fileToTransferChecked.value = [];
   fileReadyTransfer.value.forEach((file) => {
     const fileData = {};
     fileData.name = path.value + "/" + file.file.name;
@@ -321,7 +331,9 @@ const handleUpload = () => {
     fileData.data = null;
     fileData.file = file.file;
     fileData.type = "file";
+    fileData.selected = true;
     fileToTransfer.value.push(fileData);
+    fileToTransferChecked.value.push(fileData.name);
   });
 
   fileUpload(0)
@@ -335,6 +347,7 @@ const handleUpload = () => {
       uploadingTotalSize.value = 0;
       showUploadList.value = false;
       fileToTransfer.value = [];
+      fileToTransferChecked.value = [];
     })
     .catch((err) => {
       message.error(err);
@@ -343,6 +356,7 @@ const handleUpload = () => {
       uploadingPercentage.value = 0;
       uploadingTotalSize.value = 0;
       fileToTransfer.value = [];
+      fileToTransferChecked.value = [];
     });
 };
 
@@ -350,7 +364,7 @@ const fileUpload = (filePos) => {
   return new Promise((resolve, reject) => {
     if (filePos + 1 > fileToTransfer.value.length) {
       resolve();
-    } else {
+    } else if (fileToTransfer.value[filePos].selected === true) {
       if (fileToTransfer.value[filePos].type == "file") {
         fileToTransfer.value[filePos].status = "uploading";
         fileSend(fileToTransfer.value[filePos])
@@ -382,6 +396,12 @@ const fileUpload = (filePos) => {
             reject("fileUpload error: " + e);
           });
       }
+    } else {
+      fileToTransfer.value[filePos].status = "ignored";
+      filePos++;
+      fileUpload(filePos).then(() => {
+        resolve();
+      });
     }
   });
 };
@@ -442,7 +462,7 @@ const fileSend = (file) => {
 
 const fileSendData = (fileData, firmwareProgress) => {
   return new Promise((resolve /*, reject*/) => {
-    let packetLength = 200;
+    let packetLength = mtuSize.value;
 
     let element = fileData.slice(
       firmwareProgress,
@@ -578,6 +598,12 @@ const deviceFileListColumns = createFileListColumns();
 const createUploadFileListColumns = () => {
   return [
     {
+      type: "selection",
+      disabled(row) {
+        return row.type === "dir";
+      },
+    },
+    {
       title: "Name",
       key: "name",
       render(row) {
@@ -604,8 +630,21 @@ const createUploadFileListColumns = () => {
 const uploadFileListColumns = createUploadFileListColumns();
 
 // eslint-disable-next-line no-unused-vars
-const rowClassName = (row, index) => {        
+const rowClassName = (row, index) => {
   return row.status;
+};
+
+const handlefileToTransferCheck = (rowKeys) => {
+  fileToTransferChecked.value = rowKeys;
+  fileToTransfer.value.forEach((file) => {
+    file.selected = false;
+  });
+  rowKeys.forEach((key) => {
+    let row = fileToTransfer.value.find((row) => row.name == key);
+    if (row) {
+      row.selected = true;
+    }
+  });
 };
 
 // -----------------------------------------------------------------------------------
@@ -624,6 +663,7 @@ const resourceUpload = ({ file, onFinish }) => {
       resZip.loadAsync(fileSource).then(function (zip) {
         // you now have every files contained in the loaded zip
         fileToTransfer.value = [];
+        fileToTransferChecked.value = [];
         zip.forEach(function (relativePath, zipEntry) {
           const fileData = {};
           if (zipEntry.dir) {
@@ -633,18 +673,22 @@ const resourceUpload = ({ file, onFinish }) => {
             fileData.type = "dir";
             fileData.status = "pending";
             fileData.size = 0;
+            fileData.selected = true;
             fileToTransfer.value.push(fileData);
+            fileToTransferChecked.value.push(fileData.name);
             //message.success("Creating directory " + relativePath + "");
             //makeDir("/" + relativePath);
           } else {
-            //message.success("Uploading file " + relativePath + "");            
+            //message.success("Uploading file " + relativePath + "");
             zipEntry.async("uint8array").then(function (data) {
               fileData.name = "/" + relativePath;
               fileData.data = data;
               fileData.size = data.length;
               fileData.status = "pending";
               fileData.type = "file";
+              fileData.selected = true;
               fileToTransfer.value.push(fileData);
+              fileToTransferChecked.value.push(fileData.name);
               //console.log("File " + relativePath + "");
             });
           }
@@ -671,6 +715,7 @@ const handleUploadRes = () => {
       uploadingTotalSize.value = 0;
       showUploadList.value = false;
       fileToTransfer.value = [];
+      fileToTransferChecked.value = [];
       uploadingResFile.value = "";
       loadDir(path.value);
     })
@@ -683,6 +728,7 @@ const handleUploadRes = () => {
       uploadingPercentage.value = 0;
       uploadingTotalSize.value = 0;
       fileToTransfer.value = [];
+      fileToTransferChecked.value = [];
     });
 };
 
@@ -693,6 +739,7 @@ const handleUploadResCancel = () => {
   uploadingPercentage.value = 0;
   uploadingTotalSize.value = 0;
   fileToTransfer.value = [];
+  fileToTransferChecked.value = [];
 };
 
 // ------------------------------------------------------------------------------
@@ -853,13 +900,12 @@ const handleFileNotifications = (event) => {
         flags: dirList.flags,
       });
     }
-
-    if (dirList.path_length == 0) {
+    deviceFileList.value.sort(function (a, b) {
+      return b.flags - a.flags;
+    });
+    /*if (dirList.path_length == 0) {
       loadingFolder.value = false;
-      deviceFileList.value.sort(function (a, b) {
-        return b.flags - a.flags;
-      });
-    }
+    }*/
   } else if (value.getUint8(offset) == 0x41) {
     // Create DIR
     offset++;
@@ -932,7 +978,7 @@ const loadDir = (dirPath) => {
       .writeValueWithoutResponse(value)
       .then(function () {
         //deviceFileList.value = [];
-        loadingFolder.value = true;
+        //loadingFolder.value = true;
         resolve();
       })
       .catch(function (error) {
