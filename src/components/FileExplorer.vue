@@ -868,10 +868,23 @@ const getDeviceFileCharacteristic = () => {
 let dirList = {};
 
 const handleFileNotifications = (event) => {
+  if (!fileServiceReady.value) return;
+
   let value = event.target.value;
   let offset = 0;
   //console.log('handleFileNotifications');
   if (value.getUint8(offset) == 0x51) {
+    if (value.byteLength == 20) {
+      // issue encountered with Samsung Internet Browser on Android
+      // see https://github.com/WebBluetoothCG/web-bluetooth/issues/284
+      // and https://twitter.com/quicksave2k/status/1460550201064763402
+      message.error("Sufficiently large messages are not supported by your browser. Consider updating or using a different browser instead.", {
+        closable: true,
+        duration: 10000,
+      });
+      fileServiceReady.value = false;
+    }
+
     //console.log(value);
     dirList = {};
     offset++;
