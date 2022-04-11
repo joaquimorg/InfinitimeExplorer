@@ -875,7 +875,7 @@ const handleFileNotifications = (event) => {
     //console.log(value);
     dirList = {};
     offset++;
-    dirList.status = value.getUint8(offset);
+    dirList.status = value.getInt8(offset);
     offset++;
     dirList.path_length = value.getUint16(offset, true);
     offset += 2;
@@ -909,7 +909,7 @@ const handleFileNotifications = (event) => {
   } else if (value.getUint8(offset) == 0x41) {
     // Create DIR
     offset++;
-    let status = value.getUint8(offset);
+    let status = value.getInt8(offset);
     if (status == 0x01) {
       message.success("Directory created.");
     } else {
@@ -919,7 +919,7 @@ const handleFileNotifications = (event) => {
   } else if (value.getUint8(offset) == 0x31) {
     // DeleteFile/Dir
     offset++;
-    let status = value.getUint8(offset);
+    let status = value.getInt8(offset);
     if (status == 0x01) {
       message.success("File deleted.");
     } else {
@@ -929,7 +929,7 @@ const handleFileNotifications = (event) => {
   } else if (value.getUint8(offset) == 0x21) {
     // File Upload
     offset++;
-    let status = value.getUint8(offset);
+    let status = value.getInt8(offset);
     if (status == 0x01) {
       //message.success("File created.");
     } else {
