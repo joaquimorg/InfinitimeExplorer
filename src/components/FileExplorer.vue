@@ -916,14 +916,27 @@ const getDeviceFileCharacteristic = () => {
 let dirList = {};
 
 const handleFileNotifications = (event) => {
+  if (!fileServiceReady.value) return;
+
   let value = event.target.value;
   let offset = 0;
   //console.log('handleFileNotifications');
   if (value.getUint8(offset) == 0x51) {
+    if (value.byteLength == 20) {
+      // issue encountered with Samsung Internet Browser on Android
+      // see https://github.com/WebBluetoothCG/web-bluetooth/issues/284
+      // and https://twitter.com/quicksave2k/status/1460550201064763402
+      message.error("Sufficiently large messages are not supported by your browser. Consider updating or using a different browser instead.", {
+        closable: true,
+        duration: 10000,
+      });
+      fileServiceReady.value = false;
+    }
+
     //console.log(value);
     dirList = {};
     offset++;
-    dirList.status = value.getUint8(offset);
+    dirList.status = value.getInt8(offset);
     offset++;
     dirList.path_length = value.getUint16(offset, true);
     offset += 2;
@@ -957,7 +970,7 @@ const handleFileNotifications = (event) => {
   } else if (value.getUint8(offset) == 0x41) {
     // Create DIR
     offset++;
-    let status = value.getUint8(offset);
+    let status = value.getInt8(offset);
     if (status == 0x01) {
       message.success("Directory created.");
     } else {
@@ -967,7 +980,7 @@ const handleFileNotifications = (event) => {
   } else if (value.getUint8(offset) == 0x31) {
     // DeleteFile/Dir
     offset++;
-    let status = value.getUint8(offset);
+    let status = value.getInt8(offset);
     if (status == 0x01) {
       message.success("File deleted.");
     } else {
@@ -977,7 +990,7 @@ const handleFileNotifications = (event) => {
   } else if (value.getUint8(offset) == 0x21) {
     // File Upload
     offset++;
-    let status = value.getUint8(offset);
+    let status = value.getInt8(offset);
     if (status == 0x01) {
       //message.success("File created.");
     } else {
