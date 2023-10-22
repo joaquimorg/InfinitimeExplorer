@@ -1,12 +1,12 @@
 # InfiniTime File Explorer
 
-File Explorer for <a href="https://github.com/InfiniTimeOrg/InfiniTime">InfiniTime version 1.8.0</a> firmware on PineTime smartwatch
+File Explorer for <a href="https://github.com/InfiniTimeOrg/InfiniTime">InfiniTime</a> firmware on PineTime smartwatch
 
 View Live https://infinitimeexplorer.netlify.app/
 [![Netlify Status](https://api.netlify.com/api/v1/badges/752c330b-417e-485a-8682-e09610941ece/deploy-status)](https://app.netlify.com/sites/infinitimeexplorer/deploys)
 
 File explorer for InfiniTime external flash, can create and delete directories, delete and upload files.
-Also can be used to upload a resource file, the resource file can have directories and files to be uploaded/created on the PineTime.
+Also can be used to upload a resource file (.res or .zip), the resource file can have directories and files to be uploaded/created on the PineTime.
 
 Tested on Google Chrome, Windows and Android, on the Android some times you need to hit "Reload" to work.
 
