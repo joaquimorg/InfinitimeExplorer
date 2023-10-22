@@ -1,11 +1,11 @@
 
 <template>
   <div style="margin: 20px">
-    <n-card size="huge" title="Infinitime File Explorer">
+    <n-card size="huge" title="File Explorer for PineTime runing Infinitime firmware">
       <n-space vertical>
         <div></div>
         <n-button type="success" v-if="!isConnected" @click="connectDevice">
-          Connect to Infinitime
+          Connect to&nbsp;<b>Infinitime</b>
         </n-button>
 
         <div v-if="isConnected">
@@ -96,7 +96,7 @@
                 <n-gi>
                   <div v-if="!showUploadList">
                     <n-space>
-                      <n-upload :custom-request="resourceUpload" accept=".res">
+                      <n-upload :custom-request="resourceUpload" accept=".res,.zip">
                         <n-button secondary round type="success">
                           Open resource file
                         </n-button>
@@ -107,7 +107,7 @@
                       :default-upload="false"
                       multiple
                       @change="handleUploadChange"
-                      accept=".bin"
+                      accept=".bin,.zip"
                     >
                       <n-upload-dragger>
                         <div style="margin-bottom: 12px">
@@ -656,44 +656,92 @@ const resourceUpload = ({ file, onFinish }) => {
   reader.onload = (f) => {
     if (f.target.result.byteLength > 0) {
       let fileSource = new Uint8Array(f.target.result);
-      console.log("local res file read");
+      console.log("local res file read " + file.file.name);
       console.log("file size : " + fileSource.byteLength);
-
       let resZip = new JsZip();
+
       resZip.loadAsync(fileSource).then(function (zip) {
         // you now have every files contained in the loaded zip
+        
         fileToTransfer.value = [];
         fileToTransferChecked.value = [];
-        zip.forEach(function (relativePath, zipEntry) {
-          const fileData = {};
-          if (zipEntry.dir) {
-            relativePath = relativePath.slice(0, -1);
-            //console.log("Directory " + relativePath + "");
-            fileData.name = "/" + relativePath;
-            fileData.type = "dir";
-            fileData.status = "pending";
-            fileData.size = 0;
-            fileData.selected = true;
-            fileToTransfer.value.push(fileData);
-            fileToTransferChecked.value.push(fileData.name);
-            //message.success("Creating directory " + relativePath + "");
-            //makeDir("/" + relativePath);
-          } else {
-            //message.success("Uploading file " + relativePath + "");
-            zipEntry.async("uint8array").then(function (data) {
+        
+        let resourceFile = zip.file("resources.json");
+
+        if ( resourceFile ) {
+          resourceFile.async("string")            
+            .then(function (data) {            
+              //console.log("json : " + data);
+              const resJSON = JSON.parse(data);              
+              let resFiles = resJSON.resources;
+              let resDir = [];
+              resFiles.forEach(function (file) {
+                let filePath = file.path.substring(0, file.path.lastIndexOf("/"));
+                if (!resDir.includes(filePath)) {
+                  resDir.push(filePath);
+                }                
+              });
+
+              resDir.forEach(function (dir) {
+                const fileData = {};
+                fileData.name = dir;
+                fileData.type = "dir";
+                fileData.status = "pending";
+                fileData.size = 0;
+                fileData.selected = true;
+                fileToTransfer.value.push(fileData);
+                fileToTransferChecked.value.push(fileData.name);
+              });
+
+              resFiles.forEach(function (file) {
+                zip.file(file.filename).async("uint8array").then(function (data) {
+                  const fileData = {};
+                  fileData.name = file.path;
+                  fileData.data = data;
+                  fileData.size = data.length;
+                  fileData.status = "pending";
+                  fileData.type = "file";
+                  fileData.selected = true;
+                  fileToTransfer.value.push(fileData);
+                  fileToTransferChecked.value.push(fileData.name);
+                });
+              });
+
+              showUploadList.value = true;
+            });
+        } else {
+        
+          zip.forEach(function (relativePath, zipEntry) {
+            const fileData = {};
+            if (zipEntry.dir) {
+              relativePath = relativePath.slice(0, -1);
+              //console.log("Directory " + relativePath + "");
               fileData.name = "/" + relativePath;
-              fileData.data = data;
-              fileData.size = data.length;
+              fileData.type = "dir";
               fileData.status = "pending";
-              fileData.type = "file";
+              fileData.size = 0;
               fileData.selected = true;
               fileToTransfer.value.push(fileData);
               fileToTransferChecked.value.push(fileData.name);
-              //console.log("File " + relativePath + "");
-            });
-          }
-          showUploadList.value = true;
-        });
+              //message.success("Creating directory " + relativePath + "");
+              //makeDir("/" + relativePath);
+            } else {
+              //message.success("Uploading file " + relativePath + "");
+              zipEntry.async("uint8array").then(function (data) {
+                fileData.name = "/" + relativePath;
+                fileData.data = data;
+                fileData.size = data.length;
+                fileData.status = "pending";
+                fileData.type = "file";
+                fileData.selected = true;
+                fileToTransfer.value.push(fileData);
+                fileToTransferChecked.value.push(fileData.name);
+                //console.log("File " + relativePath + "");
+              });
+            }
+            showUploadList.value = true;
+          });
+        }
       });
     }
   };
